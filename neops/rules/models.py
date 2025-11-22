@@ -4,7 +4,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from neoops.models import Severity
+from neops.models import Severity
 
 
 class RuleClass(BaseModel):

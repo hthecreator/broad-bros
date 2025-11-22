@@ -1,7 +1,7 @@
 """Deprecation-related models and default configurations."""
 
-from neoops.deprecations.default import DEFAULT_DEPRECATION_CONFIG, get_deprecation_config
-from neoops.deprecations.models import (
+from neops.deprecations.default import DEFAULT_DEPRECATION_CONFIG, get_deprecation_config
+from neops.deprecations.models import (
     DeprecatedModel,
     DeprecationConfig,
     ProviderDeprecationConfig,

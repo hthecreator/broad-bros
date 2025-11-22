@@ -1,95 +1,22 @@
-"""Main entry point for Neops scanning."""
+"""Core scanning functionality for Neops."""
 
-import asyncio
 import json
+import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 import logfire
 from pydantic_ai import Agent
 
-from neoops.agent import AgentAnalysisResult, NeopsAgent, RuleCheckResult
-from neoops.models import Finding, Findings, RuleConfig, Severity
-from neoops.prompts import SYSTEM_PROMPT
-from neoops.rules import get_default_rules
-from neoops.rules.models import Rule
-from neoops.settings import NeopsSettings, settings
-from neoops.tools import parse_ast, read_file, search_pattern
-
-
-def apply_rule_overrides(rules: list[Rule], overrides: dict[str, dict[str, Any]]) -> list[Rule]:
-    """Apply simple rule overrides to rules.
-
-    Args:
-        rules: List of rules to apply overrides to
-        overrides: Dictionary mapping rule_id to override config (e.g., {"IOH-001": {"severity": "warning"}})
-
-    Returns:
-        List of rules with overrides applied
-    """
-    rules_dict = {rule.rule_id: rule for rule in rules}
-
-    for rule_id, override_config in overrides.items():
-        if rule_id in rules_dict:
-            rule = rules_dict[rule_id]
-            # Override severity if specified
-            if "severity" in override_config:
-                rule.severity = Severity(override_config["severity"].lower())
-            # Override enabled if specified
-            if "enabled" in override_config:
-                rule.enabled = override_config["enabled"]
-
-    return list(rules_dict.values())
-
-
-def create_rule_configs(rules: list[Rule]) -> list[RuleConfig]:
-    """Create RuleConfig objects from rules.
-
-    Args:
-        rules: List of rules
-
-    Returns:
-        List of RuleConfig objects
-    """
-    return [
-        RuleConfig(
-            rule_id=rule.rule_id,
-            enabled=rule.enabled,
-            severity=rule.severity,
-        )
-        for rule in rules
-    ]
-
-
-def aggregate_findings(all_results: list[tuple[Rule, RuleCheckResult]]) -> list[Finding]:
-    """Aggregate findings from all rule check results.
-
-    Args:
-        all_results: List of tuples of (rule, RuleCheckResult)
-
-    Returns:
-        List of all findings
-    """
-    findings = []
-    for _, result in all_results:
-        findings.extend(result.findings)
-    return findings
-
-
-def create_summary(findings: list[Finding]) -> dict[str, int]:
-    """Create summary statistics from findings.
-
-    Args:
-        findings: List of findings
-
-    Returns:
-        Dictionary with counts by severity
-    """
-    summary = {"error": 0, "warning": 0, "info": 0}
-    for finding in findings:
-        severity = finding.severity.value
-        summary[severity] = summary.get(severity, 0) + 1
-    return summary
+from neops.agent import AgentAnalysisResult, NeopsAgent, RuleCheckResult
+from neops.cli_utils import aggregate_findings, apply_rule_overrides, create_rule_configs, create_summary
+from neops.models import Findings
+from neops.prompts import SYSTEM_PROMPT
+from neops.rules import get_default_rules
+from neops.rules.models import Rule
+from neops.settings import NeopsSettings, settings
+from neops.tools import parse_ast, read_file, search_pattern
 
 
 async def scan_codebase(
@@ -109,8 +36,6 @@ async def scan_codebase(
     Returns:
         Findings model with all findings
     """
-    import os
-
     # Configure logfire for local monitoring only (no cloud)
     logfire.configure(
         send_to_logfire=False,  # Don't send to logfire cloud, only local logging
@@ -196,8 +121,6 @@ def save_findings_to_file(findings: Findings, output_dir: Path | None = None) ->
     Returns:
         Path to the saved file
     """
-    from datetime import datetime
-
     if output_dir is None:
         output_dir = Path.cwd()
     else:
@@ -226,27 +149,3 @@ def format_report_as_json(findings: Findings) -> str:
         JSON string representation of the findings
     """
     return json.dumps(findings.model_dump(mode="json"), indent=2, default=str)
-
-
-async def main():
-    """Main entry point."""
-    # Example: scan some code paths
-    code_paths = [Path("tests/good_ai/good_ai_one.py")]
-
-    # Simple rule override: change IOH-001 severity to warning
-    rule_overrides = {
-        "IOH-001": {"severity": "warning"},
-    }
-
-    # Run scan (logfire automatically logs everything)
-    findings = await scan_codebase(
-        code_paths=code_paths,
-        rule_overrides=rule_overrides,
-    )
-
-    # Save results to timestamped JSON file
-    save_findings_to_file(findings)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

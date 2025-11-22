@@ -3,14 +3,16 @@
 This module defines the command-line interface structure and commands.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Optional
 
 import typer
 
-from neops.config import PyProjectNotFoundError, PyProjectParseError, get_project_config
+from neops.cli_config import PyProjectNotFoundError, PyProjectParseError, find_repo_root, get_project_config
 from neops.file_scanner import GitNotFoundError, resolve_file_paths
 from neops.logging_config import get_logger, setup_logging
+from neops.scanner import save_findings_to_file, scan_codebase
 
 # Get logger for this module
 logger = get_logger(__name__)
@@ -78,20 +80,6 @@ def main_callback(
 
 
 @app.command()
-def hello(
-    name: str = typer.Argument(..., help="Name of person to greet"),
-) -> None:
-    """Say hello to someone.
-
-    This is a sample command demonstrating the CLI structure.
-    """
-    logger.debug("Starting hello command with name: %s", name)
-    logger.info("Greeting %s", name)
-    logger.info("Hello %s", name)
-    logger.debug("Hello command completed successfully")
-
-
-@app.command()
 def show_config() -> None:
     """Display the loaded project configuration.
 
@@ -142,11 +130,18 @@ def list_files() -> None:
 
 
 @app.command()
-def scan() -> None:
-    """Scan the discovered or specified files.
+def scan(
+    output_dir: Optional[Path] = typer.Option(  # noqa: B008
+        None,
+        "--output-dir",
+        "-o",
+        help="Directory to save scan results (default: current directory)",
+        exists=False,
+    ),
+) -> None:
+    """Scan the discovered or specified files for AI safety issues.
 
-    This is a placeholder command demonstrating file access.
-    Business logic for actual scanning will be added later.
+    Runs all enabled rules against the files and generates a report.
     """
     logger.debug("Starting scan operation")
 
@@ -156,17 +151,25 @@ def scan() -> None:
 
     logger.info("Scanning %s file(s)...", len(_files_to_scan))
 
-    # Placeholder: demonstrate we can access the files
-    for i, file in enumerate(_files_to_scan, 1):
-        logger.debug("Processing file %s/%s: %s", i, len(_files_to_scan), file)
-        # Business logic will go here
-        if file.exists():
-            logger.debug("File exists and is readable: %s", file)
-        else:
-            logger.warning("File not found: %s", file)
+    logger.info("Scanning files: %s", _files_to_scan)
+    project_root = find_repo_root() if _project_config else None
+    logger.info("Project root: %s", project_root)
+    # Run async scan
+    findings = asyncio.run(
+        scan_codebase(
+            code_paths=_files_to_scan,
+            project_root=find_repo_root() if _project_config else None,
+        )
+    )
 
-    logger.info("✓ Scan complete: %s files processed", len(_files_to_scan))
-    logger.info("Scan completed successfully")
+    # Save results to timestamped JSON file
+    output_path = save_findings_to_file(findings, output_dir=output_dir)
+
+    # Log summary
+    summary = findings.summary
+    logger.info("Scan complete!")
+    logger.info("Summary: %s errors, %s warnings, %s info", summary["error"], summary["warning"], summary["info"])
+    logger.info("Results saved to: %s", output_path)
 
 
 # Add more commands here as needed

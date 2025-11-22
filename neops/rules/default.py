@@ -3,8 +3,8 @@
 from pathlib import Path
 from typing import Optional
 
-from neoops.config.loader import load_rules, load_rules_with_overrides
-from neoops.rules.models import Rule
+from neops.config.loader import load_rules, load_rules_with_overrides
+from neops.rules.models import Rule
 
 # Cache for default rules (loaded on first access)
 _default_rules_cache: Optional[list[Rule]] = None

@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from neoops.main import Findings, format_report_as_json, scan_codebase
+from neops.models import Findings
+from neops.scanner import format_report_as_json, scan_codebase
 
 logger = logging.getLogger(__name__)
 

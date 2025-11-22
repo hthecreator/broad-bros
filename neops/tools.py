@@ -35,6 +35,7 @@ def read_file(file_path: str) -> ReadFileOutput:
 
     content = path.read_text(encoding="utf-8")
     lines = content.splitlines()
+
     return ReadFileOutput(content=content, line_count=len(lines))
 
 

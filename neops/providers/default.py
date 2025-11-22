@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
-from neoops.providers.models import ProviderConfig
+from neops.providers.models import ProviderConfig
 
 # Lazy-loaded default provider config
 _default_provider_config: Optional[ProviderConfig] = None
@@ -11,7 +11,7 @@ _default_provider_config: Optional[ProviderConfig] = None
 
 def _load_default_provider_config() -> ProviderConfig:
     """Load default provider config from YAML."""
-    from neoops.config.loader import load_provider_config
+    from neops.config.loader import load_provider_config
 
     return load_provider_config()
 
@@ -41,6 +41,6 @@ def get_provider_config(project_root: Optional[Path] = None) -> ProviderConfig:
     Returns:
         ProviderConfig with overrides applied
     """
-    from neoops.config.loader import load_provider_config_with_overrides
+    from neops.config.loader import load_provider_config_with_overrides
 
     return load_provider_config_with_overrides(project_root)

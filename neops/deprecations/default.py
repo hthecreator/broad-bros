@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
-from neoops.deprecations.models import DeprecationConfig
+from neops.deprecations.models import DeprecationConfig
 
 # Lazy-loaded default deprecation config
 _default_deprecation_config: Optional[DeprecationConfig] = None
@@ -11,7 +11,7 @@ _default_deprecation_config: Optional[DeprecationConfig] = None
 
 def _load_default_deprecation_config() -> DeprecationConfig:
     """Load default deprecation config from YAML."""
-    from neoops.config.loader import load_deprecation_config
+    from neops.config.loader import load_deprecation_config
 
     return load_deprecation_config()
 
@@ -41,6 +41,6 @@ def get_deprecation_config(project_root: Optional[Path] = None) -> DeprecationCo
     Returns:
         DeprecationConfig with overrides applied
     """
-    from neoops.config.loader import load_deprecation_config_with_overrides
+    from neops.config.loader import load_deprecation_config_with_overrides
 
     return load_deprecation_config_with_overrides(project_root)

@@ -6,8 +6,8 @@ from typing import Any
 
 import yaml
 
-from neoops.models import Severity
-from neoops.rules.models import Rule, RuleClass
+from neops.models import Severity
+from neops.rules.models import Rule, RuleClass
 
 
 def get_config_dir() -> Path:
@@ -160,7 +160,7 @@ def load_provider_config(project_root: Path | None = None):
     Returns:
         ProviderConfig object loaded from the YAML file
     """
-    from neoops.providers.models import ProviderConfig
+    from neops.providers.models import ProviderConfig
 
     config_dir = get_config_dir()
     providers_file = config_dir / "providers.yaml"
@@ -207,7 +207,7 @@ def load_deprecation_config(project_root: Path | None = None):
     Returns:
         DeprecationConfig object loaded from the YAML file
     """
-    from neoops.deprecations.models import (
+    from neops.deprecations.models import (
         DeprecatedModel,
         DeprecationConfig,
         ProviderDeprecationConfig,
@@ -290,7 +290,7 @@ def load_deprecation_config_with_overrides(project_root: Path | None = None):
     Returns:
         DeprecationConfig object with overrides applied
     """
-    from neoops.deprecations.models import DeprecatedModel
+    from neops.deprecations.models import DeprecatedModel
 
     config = load_deprecation_config(project_root)
     overrides = load_pyproject_toml(project_root)

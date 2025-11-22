@@ -22,12 +22,12 @@ class NeopsSettings(BaseSettings):
 
     @property
     def agent_model(self) -> str:
-        """Agent model to use (hardcoded to gpt-4o, not overridable by env vars).
+        """Agent model to use (hardcoded to o3-mini, not overridable by env vars).
 
         Returns:
-            The agent model string, always "openai:gpt-4o"
+            The agent model string, always "openai:o3-mini"
         """
-        return "openai:gpt-4o"
+        return "openai:o3-mini"
 
 
 # Global settings instance - will be initialized when imported

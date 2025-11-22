@@ -30,8 +30,8 @@ def bad_model_provider_worrying():
     return model_provider
 
 
-def bad_model_provider_dangerous():
-    model_provider = "UnsafeProvider"
+def ok_model_provider_dangerous():
+    model_provider = "safe provider"
     return model_provider
 
 

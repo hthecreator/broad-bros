@@ -29,6 +29,11 @@ uv run pre-commit install
 
 ## Running the CLI
 
+### Available Commands
+
+- **`hello`**: Greet someone (sample command)
+- **`show-config`**: Display the loaded project configuration from pyproject.toml
+
 ### Local Development Usage
 
 Once you've set up the environment with `uv sync`, you can run the CLI tool using:
@@ -58,6 +63,24 @@ The CLI supports incremental verbosity flags following Unix conventions:
 - **`-v` (INFO)**: Shows informational messages about what the tool is doing
 - **`-vv` (DEBUG)**: Shows detailed debug information with timestamps and function names
 - **`-vvv` (TRACE)**: Shows all debug information including from third-party libraries
+
+#### Configuration File
+
+The CLI automatically loads your `pyproject.toml` file. You can specify a custom path:
+
+```bash
+# Use default (searches for pyproject.toml at repository root)
+uv run neops show-config
+
+# Specify a custom path to pyproject.toml file
+uv run neops -p /path/to/pyproject.toml show-config
+
+# Specify a directory containing pyproject.toml
+uv run neops -p /path/to/project/ show-config
+
+# View what was loaded with verbose output
+uv run neops -vv -p /custom/path show-config
+```
 
 ### Docker Usage
 

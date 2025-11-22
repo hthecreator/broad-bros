@@ -16,7 +16,7 @@ from neops.prompts import SYSTEM_PROMPT
 from neops.rules import get_default_rules
 from neops.rules.models import Rule
 from neops.settings import NeopsSettings, settings
-from neops.tools import parse_ast, read_file, search_pattern
+from neops.tools import parse_ast, parse_asts, read_file, read_files, search_pattern, search_patterns
 
 
 async def scan_codebase(
@@ -59,12 +59,19 @@ async def scan_codebase(
     # Create rule configs
     rule_configs = create_rule_configs(rules)
 
-    # Create Pydantic AI agent
+    # Create Pydantic AI agent with batch tools
     pydantic_agent = Agent(
         scan_settings.agent_model,
         output_type=AgentAnalysisResult,
         system_prompt=SYSTEM_PROMPT,
-        tools=[read_file, parse_ast, search_pattern],
+        tools=[
+            read_file,  # Single file read
+            read_files,  # Batch file read - RECOMMENDED
+            parse_ast,  # Single file AST
+            parse_asts,  # Batch AST - RECOMMENDED
+            search_pattern,  # Single file search
+            search_patterns,  # Batch search - RECOMMENDED
+        ],
     )
 
     # Create NeopsAgent wrapper

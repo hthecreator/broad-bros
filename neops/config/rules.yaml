@@ -82,7 +82,9 @@ rules:
     name: Model provider is listed as Dangerous
     description: |
       Checks if the code or configuration uses a model provider flagged as Dangerous in the provider list.
-      Model provider invocation and that provider is in the "Dangerous" list.
+      safe: OpenAI, Anthropic, Google, Meta, Mistral AI
+      worrying: DeepSeek
+      dangerous:  Zhipu AI
     category: model_provider
     severity: error
     enabled: true

@@ -9,7 +9,7 @@ from neops.models import Finding, RuleConfig
 from neops.prompts import SYSTEM_PROMPT, build_multi_rule_check_prompt, build_rule_check_prompt
 from neops.rules.models import Rule
 from neops.settings import settings
-from neops.tools import parse_ast, read_file, search_pattern
+from neops.tools import parse_ast, parse_asts, read_file, read_files, search_pattern, search_patterns
 
 
 class RuleCheckInput(BaseModel):
@@ -196,7 +196,14 @@ class NeopsAgent:
             settings.agent_model,
             output_type=MultiRuleAnalysisResult,
             system_prompt=SYSTEM_PROMPT,
-            tools=[read_file, parse_ast, search_pattern],
+            tools=[
+                read_file,  # Single file read
+                read_files,  # Batch file read - RECOMMENDED
+                parse_ast,  # Single file AST
+                parse_asts,  # Batch AST - RECOMMENDED
+                search_pattern,  # Single file search
+                search_patterns,  # Batch search - RECOMMENDED
+            ],
         )
 
         # Run the agent (logfire automatically tracks via instrument_pydantic_ai())

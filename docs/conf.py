@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(__location__, "../src"))
 # https://github.com/rtfd/readthedocs.org/issues/1139
 
 output_dir = os.path.join(__location__, "api")
-module_dir = os.path.join(__location__, "../neoops")
+module_dir = os.path.join(__location__, "../neops")
 try:
     shutil.rmtree(output_dir)
 except FileNotFoundError:

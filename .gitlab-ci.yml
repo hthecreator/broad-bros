@@ -1,0 +1,97 @@
+#gitlab-ci for the cookiecutter template
+image: python:3.12-slim
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
+  PRE_COMMIT_HOME: "$CI_PROJECT_DIR/.cache/pre-commit"
+
+# Define cache templates for reuse
+.pip_cache: &pip_cache
+  key: pip-cache
+  paths:
+    - $PIP_CACHE_DIR
+  policy: pull
+
+.uv_cache: &uv_cache
+  key:
+    prefix: "uv-"
+    files:
+      - uv.lock
+  paths:
+    - $UV_CACHE_DIR
+  policy: pull
+
+.precommit_cache: &precommit_cache
+  key: precommit-cache
+  paths:
+    - $PRE_COMMIT_HOME
+  policy: pull
+
+# Define workflow rules for efficient pipeline execution
+.default-rules: &default-rules
+  if: '$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# Common job template
+.job_template: &job_template
+  before_script:
+    - apt-get update && apt-get install -y git # required by pre-commit
+    - pip install uv
+    - uv sync --frozen
+
+stages:
+  - lint
+  - test
+  - docs
+
+build:
+  extends: .job_template
+  stage: lint
+  script:
+    - uv cache prune --ci  # Optimize cache for CI environments
+    - uv run pre-commit run --all-files
+  cache:
+    # First job pushes caches
+    - <<: *pip_cache
+      policy: pull-push
+    - <<: *uv_cache
+      policy: pull-push
+    - <<: *precommit_cache
+      policy: pull-push
+  rules:
+    - <<: *default-rules
+
+test:
+  extends: .job_template
+  stage: test
+  script:
+    - uv run pytest --cov=src
+  coverage: '/TOTAL.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  cache:
+    # Subsequent jobs only pull caches
+    - <<: *pip_cache
+    - <<: *uv_cache
+    - <<: *precommit_cache
+  rules:
+    - <<: *default-rules
+
+# docs:
+#   extends: .job_template
+#   stage: docs
+#   script:
+#     - apt-get update && apt-get install -y make
+#     - make -C docs html
+#     - mv docs/_build/html/ public/
+#   artifacts:
+#     paths:
+#       - public
+#   cache:
+#     - <<: *pip_cache
+#     - <<: *uv_cache
+#   rules:
+#     - <<: *default-rules
+
+include:
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+  - template: Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml

@@ -37,13 +37,27 @@ Once you've set up the environment with `uv sync`, you can run the CLI tool usin
 # Get help
 uv run neops --help
 
-# Example: Say hello (currently the only command, so it's the default)
-uv run neops World
+# Example: Run the hello command
+uv run neops hello World
 
-# Note: Once you add more commands, the structure will be:
-# uv run neops <command> [arguments]
-# uv run neops hello World
+# With verbose output (INFO level)
+uv run neops -v hello World
+
+# With debug output (DEBUG level - shows timestamps and function names)
+uv run neops -vv hello World
+
+# With all debug output (includes third-party library logs)
+uv run neops -vvv hello World
 ```
+
+#### Verbosity Levels
+
+The CLI supports incremental verbosity flags following Unix conventions:
+
+- **No flag (default)**: Only shows WARNING and ERROR messages
+- **`-v` (INFO)**: Shows informational messages about what the tool is doing
+- **`-vv` (DEBUG)**: Shows detailed debug information with timestamps and function names
+- **`-vvv` (TRACE)**: Shows all debug information including from third-party libraries
 
 ### Docker Usage
 
@@ -62,16 +76,20 @@ docker build -t neops:latest .
 # Show help
 docker run --rm neops:latest --help
 
-# Run with arguments
-docker run --rm neops:latest World
+# Run the hello command
+docker run --rm neops:latest hello World
+
+# Run with verbose output
+docker run --rm neops:latest -v hello World
+
+# Run with debug output
+docker run --rm neops:latest -vv hello World
 
 # Mount local files if needed (e.g., for data processing)
-docker run --rm -v $(pwd)/data:/data neops:latest <arguments>
+docker run --rm -v $(pwd)/data:/data neops:latest hello World
 
 # Interactive mode (if needed)
-docker run --rm -it neops:latest <arguments>
-
-# Note: Once you add more commands, use: docker run --rm neops:latest <command> [arguments]
+docker run --rm -it neops:latest hello World
 ```
 
 #### Docker Compose (Optional)
@@ -92,7 +110,11 @@ services:
 
 Then run:
 ```bash
-docker-compose run --rm neops World
+# Basic usage
+docker-compose run --rm neops hello World
+
+# With verbose output
+docker-compose run --rm neops -v hello World
 ```
 
 ## Local development
@@ -109,9 +131,23 @@ To add new commands to the CLI, edit `src/neops/main.py`:
 @app.command()
 def your_command(arg: str):
     """Description of your command"""
+    logger.debug(f"Starting your_command with arg: {arg}")
+    logger.info("Processing data...")
+    
     # Your implementation here
-    pass
+    # Use print() for actual output
+    # Use logger for informational/debug messages
+    print(f"Result: {arg}")
+    
+    logger.debug("Command completed successfully")
 ```
+
+**Logging Best Practices:**
+- Use `logger.debug()` for detailed debugging information
+- Use `logger.info()` for general informational messages
+- Use `logger.warning()` for warnings that don't stop execution
+- Use `logger.error()` for errors
+- Use `print()` for actual command output (not logs)
 
 After adding commands, rebuild the Docker image to include the changes:
 ```bash

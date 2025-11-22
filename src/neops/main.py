@@ -9,6 +9,7 @@ from typing import Optional
 import typer
 
 from neops.config import PyProjectNotFoundError, PyProjectParseError, get_project_config
+from neops.file_scanner import GitNotFoundError, resolve_file_paths
 from neops.logging_config import get_logger, setup_logging
 
 # Get logger for this module
@@ -17,8 +18,9 @@ logger = get_logger(__name__)
 # Create the main Typer app
 app = typer.Typer()
 
-# Global variable to store loaded configuration
+# Global variables to store loaded configuration and files to scan
 _project_config: Optional[dict] = None
+_files_to_scan: list[Path] = []
 
 
 @app.callback()
@@ -37,13 +39,20 @@ def main_callback(
         help=("Path to pyproject.toml file or directory (default: repo root)"),
         exists=False,  # We'll handle validation ourselves
     ),
+    files: Optional[list[Path]] = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help=("File(s) or directory to scan (default: all git-tracked code files). Can be specified multiple times."),
+        exists=False,  # We'll handle validation ourselves
+    ),
 ) -> None:
     """Network Operations CLI Tool.
 
     Use -v for verbose output, -vv for debug,
     -vvv for all debug including dependencies.
     """
-    global _project_config
+    global _project_config, _files_to_scan
 
     # Setup logging first
     setup_logging(verbosity=verbose)
@@ -57,6 +66,14 @@ def main_callback(
         raise typer.Exit(code=1)
     except PyProjectParseError as e:
         logger.error(f"Failed to parse pyproject.toml: {e}")
+        raise typer.Exit(code=1)
+
+    # Resolve files to scan
+    try:
+        _files_to_scan = resolve_file_paths(paths=files)
+        logger.info(f"Resolved {len(_files_to_scan)} file(s) to scan")
+    except (FileNotFoundError, GitNotFoundError) as e:
+        logger.error(f"File resolution error: {e}")
         raise typer.Exit(code=1)
 
 
@@ -106,6 +123,55 @@ def show_config() -> None:
     else:
         logger.warning("No [project] section found in pyproject.toml")
         print("No project configuration found in pyproject.toml")
+
+
+@app.command()
+def list_files() -> None:
+    """List all files that will be scanned.
+
+    Shows the files discovered either from git or from explicit paths.
+    """
+    logger.debug("Listing files to scan")
+
+    if not _files_to_scan:
+        logger.warning("No files to scan")
+        print("No files to scan")
+        raise typer.Exit(code=1)
+
+    print(f"Files to scan ({len(_files_to_scan)}):")
+    for file in sorted(_files_to_scan):
+        print(f"  {file}")
+
+    logger.info(f"Listed {len(_files_to_scan)} file(s)")
+
+
+@app.command()
+def scan() -> None:
+    """Scan the discovered or specified files.
+
+    This is a placeholder command demonstrating file access.
+    Business logic for actual scanning will be added later.
+    """
+    logger.debug("Starting scan operation")
+
+    if not _files_to_scan:
+        logger.error("No files to scan")
+        print("No files to scan")
+        raise typer.Exit(code=1)
+
+    print(f"Scanning {len(_files_to_scan)} file(s)...")
+
+    # Placeholder: demonstrate we can access the files
+    for i, file in enumerate(_files_to_scan, 1):
+        logger.debug(f"Processing file {i}/{len(_files_to_scan)}: {file}")
+        # Business logic will go here
+        if file.exists():
+            logger.debug(f"File exists and is readable: {file}")
+        else:
+            logger.warning(f"File not found: {file}")
+
+    print(f"✓ Scan complete: {len(_files_to_scan)} files processed")
+    logger.info("Scan completed successfully")
 
 
 # Add more commands here as needed

@@ -7,8 +7,8 @@ SPHINXBUILD   = sphinx-build
 BUILDDIR      = ../build/sphinx/
 AUTODOCDIR    = api
 AUTODOCBUILD  = sphinx-apidoc
-PROJECT       = broad_bros
-MODULEDIR     = ../src/broad_bros
+PROJECT       = neops
+MODULEDIR     = ../neoops
 
 # Check for sphinx-build
 ifeq ($(shell which $(SPHINXBUILD) >/dev/null 2>&1; echo $?), 1)

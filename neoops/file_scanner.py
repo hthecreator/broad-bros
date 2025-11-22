@@ -95,7 +95,7 @@ def get_git_tracked_files(repo_root: Optional[Path] = None) -> list[Path]:
     if repo_root is None:
         repo_root = Path.cwd()
 
-    logger.debug(f"Getting git-tracked files from: {repo_root}")
+    logger.debug("Getting git-tracked files from: %s", repo_root)
 
     try:
         result = subprocess.run(
@@ -108,7 +108,7 @@ def get_git_tracked_files(repo_root: Optional[Path] = None) -> list[Path]:
 
         files = [repo_root / line.strip() for line in result.stdout.splitlines() if line.strip()]
 
-        logger.info(f"Found {len(files)} git-tracked files")
+        logger.info("Found %s git-tracked files", len(files))
         return files
 
     except subprocess.CalledProcessError as e:
@@ -138,7 +138,7 @@ def get_git_tracked_code_files(repo_root: Optional[Path] = None) -> list[Path]:
     all_files = get_git_tracked_files(repo_root)
     code_files = [f for f in all_files if is_code_file(f)]
 
-    logger.info(f"Filtered to {len(code_files)} code files (from {len(all_files)} total files)")
+    logger.info("Filtered to %s code files (from %s total files)", len(code_files), len(all_files))
 
     return code_files
 
@@ -173,7 +173,7 @@ def resolve_file_paths(
     """
     # If explicit paths provided, validate and use them
     if paths:
-        logger.debug(f"Resolving {len(paths)} explicit path(s)")
+        logger.debug("Resolving %s explicit path(s)", len(paths))
         resolved = []
 
         for path in paths:
@@ -184,16 +184,16 @@ def resolve_file_paths(
 
             if path.is_file():
                 resolved.append(path)
-                logger.debug(f"Added file: {path}")
+                logger.debug("Added file: %s", path)
             elif path.is_dir():
                 # Recursively find all code files in directory
                 dir_files = [f for f in path.rglob("*") if f.is_file() and is_code_file(f)]
                 resolved.extend(dir_files)
-                logger.debug(f"Added {len(dir_files)} code files from directory: {path}")
+                logger.debug("Added %s code files from directory: %s", len(dir_files), path)
             else:
-                logger.warning(f"Skipping non-file, non-directory: {path}")
+                logger.warning("Skipping non-file, non-directory: %s", path)
 
-        logger.info(f"Resolved to {len(resolved)} file(s) to scan")
+        logger.info("Resolved to %s file(s) to scan", len(resolved))
         return resolved
 
     # No explicit paths - use git-tracked code files
@@ -223,7 +223,7 @@ def validate_files_exist(files: list[Path]) -> None:
     if missing:
         raise FileNotFoundError(f"File(s) not found: {', '.join(str(f) for f in missing)}")
 
-    logger.debug(f"Validated {len(files)} file(s) exist")
+    logger.debug("Validated %s file(s) exist", len(files))
 
 
 def filter_code_files(files: list[Path]) -> list[Path]:
@@ -242,6 +242,6 @@ def filter_code_files(files: list[Path]) -> list[Path]:
     code_files = [f for f in files if is_code_file(f)]
 
     if len(code_files) < len(files):
-        logger.info(f"Filtered {len(files)} files to {len(code_files)} code files")
+        logger.info("Filtered %s files to %s code files", len(files), len(code_files))
 
     return code_files

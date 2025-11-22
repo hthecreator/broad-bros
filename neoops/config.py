@@ -45,23 +45,23 @@ def find_repo_root(start_path: Optional[Path] = None) -> Path:
     if start_path is None:
         start_path = Path.cwd()
 
-    logger.debug(f"Searching for repository root from: {start_path}")
+    logger.debug("Searching for repository root from: %s", start_path)
 
     current = start_path.resolve()
     for parent in [current, *current.parents]:
         if (parent / ".git").exists():
-            logger.debug(f"Found repository root at: {parent}")
+            logger.debug("Found repository root at: %s", parent)
             return parent
 
     # If no .git found, try finding pyproject.toml
     current = start_path.resolve()
     for parent in [current, *current.parents]:
         if (parent / "pyproject.toml").exists():
-            logger.debug(f"Found pyproject.toml at: {parent}")
+            logger.debug("Found pyproject.toml at: %s", parent)
             return parent
 
     # Fall back to current directory
-    logger.warning(f"No .git or pyproject.toml found in parent directories, using current directory: {start_path}")
+    logger.warning("No .git or pyproject.toml found in parent directories, using current directory: %s", start_path)
     return start_path
 
 
@@ -85,7 +85,7 @@ def find_pyproject_toml(custom_path: Optional[Path] = None) -> Path:
     """
     if custom_path is not None:
         custom_path = Path(custom_path).resolve()
-        logger.debug(f"Using custom path: {custom_path}")
+        logger.debug("Using custom path: %s", custom_path)
 
         # If it's a directory, look for pyproject.toml in it
         if custom_path.is_dir():
@@ -96,7 +96,7 @@ def find_pyproject_toml(custom_path: Optional[Path] = None) -> Path:
         if not pyproject_path.exists():
             raise PyProjectNotFoundError(f"pyproject.toml not found at: {pyproject_path}")
 
-        logger.info(f"Found pyproject.toml at: {pyproject_path}")
+        logger.info("Found pyproject.toml at: %s", pyproject_path)
         return pyproject_path
 
     # Default: search from repository root
@@ -106,7 +106,7 @@ def find_pyproject_toml(custom_path: Optional[Path] = None) -> Path:
     if not pyproject_path.exists():
         raise PyProjectNotFoundError(f"pyproject.toml not found at repository root: {repo_root}")
 
-    logger.info(f"Found pyproject.toml at: {pyproject_path}")
+    logger.info("Found pyproject.toml at: %s", pyproject_path)
     return pyproject_path
 
 
@@ -128,12 +128,12 @@ def load_pyproject_toml(path: Path) -> dict[str, Any]:
     PyProjectParseError
         If the file cannot be parsed
     """
-    logger.debug(f"Loading pyproject.toml from: {path}")
+    logger.debug("Loading pyproject.toml from: %s", path)
 
     try:
         with open(path, "rb") as f:
             data = tomllib.load(f)
-        logger.debug(f"Successfully parsed pyproject.toml ({len(data)} top-level keys)")
+        logger.debug("Successfully parsed pyproject.toml (%s top-level keys)", len(data))
         return data
     except Exception as e:
         raise PyProjectParseError(f"Failed to parse {path}: {e}") from e
@@ -174,8 +174,8 @@ def get_project_config(custom_path: Optional[Path] = None) -> dict[str, Any]:
 
     # Log some useful information
     if "project" in config and "name" in config["project"]:
-        logger.info(f"Loaded project: {config['project']['name']}")
+        logger.info("Loaded project: %s", config["project"]["name"])
         if "version" in config["project"]:
-            logger.info(f"Project version: {config['project']['version']}")
+            logger.info("Project version: %s", config["project"]["version"])
 
     return config

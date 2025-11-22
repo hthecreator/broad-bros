@@ -1,252 +1,181 @@
-"""Main entry point for Neops scanning."""
+"""Main CLI entry point for neops.
 
-import asyncio
-import json
+This module defines the command-line interface structure and commands.
+"""
+
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
-import logfire
-from pydantic_ai import Agent
+import typer
 
-from neoops.agent import AgentAnalysisResult, NeopsAgent, RuleCheckResult
-from neoops.models import Finding, Findings, RuleConfig, Severity
-from neoops.prompts import SYSTEM_PROMPT
-from neoops.rules import get_default_rules
-from neoops.rules.models import Rule
-from neoops.settings import NeopsSettings, settings
-from neoops.tools import parse_ast, read_file, search_pattern
+from neops.config import PyProjectNotFoundError, PyProjectParseError, get_project_config
+from neops.file_scanner import GitNotFoundError, resolve_file_paths
+from neops.logging_config import get_logger, setup_logging
+
+# Get logger for this module
+logger = get_logger(__name__)
+
+# Create the main Typer app
+app = typer.Typer()
+
+# Global variables to store loaded configuration and files to scan
+_project_config: Optional[dict] = None
+_files_to_scan: list[Path] = []
 
 
-def apply_rule_overrides(rules: list[Rule], overrides: dict[str, dict[str, Any]]) -> list[Rule]:
-    """Apply simple rule overrides to rules.
+@app.callback()
+def main_callback(
+    verbose: int = typer.Option(  # noqa: B008
+        0,
+        "--verbose",
+        "-v",
+        count=True,
+        help=("Increase verbosity (-v for INFO, -vv for DEBUG, -vvv for all debug)"),
+    ),
+    pyproject: Optional[Path] = typer.Option(  # noqa: B008
+        None,
+        "--pyproject",
+        "-p",
+        help=("Path to pyproject.toml file or directory (default: repo root)"),
+        exists=False,  # We'll handle validation ourselves
+    ),
+    files: Optional[list[Path]] = typer.Option(  # noqa: B008
+        None,
+        "--file",
+        "-f",
+        help=("File(s) or directory to scan (default: all git-tracked code files). Can be specified multiple times."),
+        exists=False,  # We'll handle validation ourselves
+    ),
+) -> None:
+    """Network Operations CLI Tool.
 
-    Args:
-        rules: List of rules to apply overrides to
-        overrides: Dictionary mapping rule_id to override config (e.g., {"IOH-001": {"severity": "warning"}})
-
-    Returns:
-        List of rules with overrides applied
+    Use -v for verbose output, -vv for debug,
+    -vvv for all debug including dependencies.
     """
-    rules_dict = {rule.rule_id: rule for rule in rules}
+    global _project_config, _files_to_scan
 
-    for rule_id, override_config in overrides.items():
-        if rule_id in rules_dict:
-            rule = rules_dict[rule_id]
-            # Override severity if specified
-            if "severity" in override_config:
-                rule.severity = Severity(override_config["severity"].lower())
-            # Override enabled if specified
-            if "enabled" in override_config:
-                rule.enabled = override_config["enabled"]
+    # Setup logging first
+    setup_logging(verbosity=verbose)
 
-    return list(rules_dict.values())
+    # Load project configuration
+    try:
+        _project_config = get_project_config(custom_path=pyproject)
+        logger.debug("Configuration loaded successfully from pyproject.toml")
+    except PyProjectNotFoundError as e:
+        logger.error("Configuration error: %s", e)
+        raise typer.Exit(code=1) from None
+    except PyProjectParseError as e:
+        logger.error("Failed to parse pyproject.toml: %s", e)
+        raise typer.Exit(code=1) from None
+
+    # Resolve files to scan
+    try:
+        _files_to_scan = resolve_file_paths(paths=files)
+        logger.info("Resolved %s file(s) to scan", len(_files_to_scan))
+    except (FileNotFoundError, GitNotFoundError) as e:
+        logger.error("File resolution error: %s", e)
+        raise typer.Exit(code=1) from None
 
 
-def create_rule_configs(rules: list[Rule]) -> list[RuleConfig]:
-    """Create RuleConfig objects from rules.
+@app.command()
+def hello(
+    name: str = typer.Argument(..., help="Name of person to greet"),
+) -> None:
+    """Say hello to someone.
 
-    Args:
-        rules: List of rules
-
-    Returns:
-        List of RuleConfig objects
+    This is a sample command demonstrating the CLI structure.
     """
-    return [
-        RuleConfig(
-            rule_id=rule.rule_id,
-            enabled=rule.enabled,
-            severity=rule.severity,
-        )
-        for rule in rules
-    ]
+    logger.debug("Starting hello command with name: %s", name)
+    logger.info("Greeting %s", name)
+    logger.info("Hello %s", name)
+    logger.debug("Hello command completed successfully")
 
 
-def aggregate_findings(all_results: list[tuple[Rule, RuleCheckResult]]) -> list[Finding]:
-    """Aggregate findings from all rule check results.
+@app.command()
+def show_config() -> None:
+    """Display the loaded project configuration.
 
-    Args:
-        all_results: List of tuples of (rule, RuleCheckResult)
-
-    Returns:
-        List of all findings
+    Shows information from the pyproject.toml file that was loaded.
     """
-    findings = []
-    for _, result in all_results:
-        findings.extend(result.findings)
-    return findings
+    logger.debug("Displaying project configuration")
 
+    if _project_config is None:
+        logger.error("No configuration loaded")
+        raise typer.Exit(code=1)
 
-def create_summary(findings: list[Finding]) -> dict[str, int]:
-    """Create summary statistics from findings.
+    # Display project metadata
+    if "project" in _project_config:
+        project = _project_config["project"]
+        logger.info("Project Configuration:")
+        logger.info("  Name: %s", project.get("name", "N/A"))
+        logger.info("  Version: %s", project.get("version", "N/A"))
+        logger.info("  Description: %s", project.get("description", "N/A"))
 
-    Args:
-        findings: List of findings
+        if "dependencies" in project:
+            logger.info("\nDependencies (%s):", len(project["dependencies"]))
+            for dep in project["dependencies"]:
+                logger.info("  - %s", dep)
 
-    Returns:
-        Dictionary with counts by severity
-    """
-    summary = {"error": 0, "warning": 0, "info": 0}
-    for finding in findings:
-        severity = finding.severity.value
-        summary[severity] = summary.get(severity, 0) + 1
-    return summary
-
-
-async def scan_codebase(
-    code_paths: list[Path],
-    project_root: Optional[Path] = None,
-    rule_overrides: Optional[dict[str, dict[str, Any]]] = None,
-    neops_settings: Optional[NeopsSettings] = None,
-) -> Findings:
-    """Scan a codebase with all rules.
-
-    Args:
-        code_paths: List of paths to scan
-        project_root: Root directory of the project for pyproject.toml lookup
-        rule_overrides: Optional dictionary of rule overrides (e.g., {"IOH-001": {"severity": "warning"}})
-        neops_settings: Optional settings instance (defaults to global settings)
-
-    Returns:
-        Findings model with all findings
-    """
-    import os
-
-    # Configure logfire for local monitoring only (no cloud)
-    logfire.configure(
-        send_to_logfire=False,  # Don't send to logfire cloud, only local logging
-    )
-    logfire.instrument_pydantic_ai()  # Instrument pydantic-ai for automatic tracking
-
-    # Use provided settings or global settings
-    scan_settings = neops_settings if neops_settings is not None else settings
-
-    # Ensure API key is in environment for pydantic_ai Agent
-    if scan_settings.openai_api_key:
-        os.environ["OPENAI_API_KEY"] = scan_settings.openai_api_key
-
-    # Load rules
-    rules = get_default_rules(project_root)
-
-    # Apply simple overrides
-    if rule_overrides:
-        rules = apply_rule_overrides(rules, rule_overrides)
-
-    # Create rule configs
-    rule_configs = create_rule_configs(rules)
-
-    # Create Pydantic AI agent
-    pydantic_agent = Agent(
-        scan_settings.agent_model,
-        output_type=AgentAnalysisResult,
-        system_prompt=SYSTEM_PROMPT,
-        tools=[read_file, parse_ast, search_pattern],
-    )
-
-    # Create NeopsAgent wrapper
-    agent = NeopsAgent(pydantic_agent)
-
-    # Run all rules on all code paths in a single API call
-    # The agent will decide which files to open and how to analyze them
-    all_results: list[tuple[Rule, RuleCheckResult]] = []
-
-    # Filter to only existing paths
-    existing_paths = [p for p in code_paths if p.exists()]
-
-    if existing_paths:
-        # Check all enabled rules against all files in one API call
-        # Logfire automatically tracks everything via instrument_pydantic_ai()
-        all_results = await agent.check_multiple_rules(
-            rules=rules,
-            rule_configs=rule_configs,
-            code_paths=existing_paths,
-        )
+        logger.info("Configuration displayed successfully")
     else:
-        all_results = []
-
-    # Aggregate findings
-    findings = aggregate_findings(all_results)
-
-    # Create summary
-    summary = create_summary(findings)
-
-    # Create config info
-    config = {
-        "rules_enabled": [rule.rule_id for rule in rules if rule.enabled],
-        "rules_disabled": [rule.rule_id for rule in rules if not rule.enabled],
-        "rule_overrides": rule_overrides or {},
-    }
-
-    # Create Findings model (Pydantic model for results)
-    findings_model = Findings(
-        summary=summary,
-        findings=findings,
-        config=config,
-    )
-
-    return findings_model
+        logger.warning("No [project] section found in pyproject.toml")
+        logger.warning("No project configuration found in pyproject.toml")
 
 
-def save_findings_to_file(findings: Findings, output_dir: Path | None = None) -> Path:
-    """Save findings to a timestamped JSON file.
+@app.command()
+def list_files() -> None:
+    """List all files that will be scanned.
 
-    Args:
-        findings: The Findings model to save
-        output_dir: Directory to save the file (defaults to current directory)
-
-    Returns:
-        Path to the saved file
+    Shows the files discovered either from git or from explicit paths.
     """
-    from datetime import datetime
+    logger.debug("Listing files to scan")
 
-    if output_dir is None:
-        output_dir = Path.cwd()
-    else:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+    if not _files_to_scan:
+        logger.warning("No files to scan")
+        raise typer.Exit(code=1)
 
-    # Generate timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"neops_scan_results_{timestamp}.json"
-    file_path = output_dir / filename
+    logger.info("Files to scan (%s):", len(_files_to_scan))
+    for file in sorted(_files_to_scan):
+        logger.info("  %s", file)
 
-    # Save as JSON
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(findings.model_dump(mode="json"), f, indent=2, default=str)
-
-    return file_path
+    logger.info("Listed %s file(s)", len(_files_to_scan))
 
 
-def format_report_as_json(findings: Findings) -> str:
-    """Format findings as JSON string.
+@app.command()
+def scan() -> None:
+    """Scan the discovered or specified files.
 
-    Args:
-        findings: The Findings model
-
-    Returns:
-        JSON string representation of the findings
+    This is a placeholder command demonstrating file access.
+    Business logic for actual scanning will be added later.
     """
-    return json.dumps(findings.model_dump(mode="json"), indent=2, default=str)
+    logger.debug("Starting scan operation")
+
+    if not _files_to_scan:
+        logger.error("No files to scan")
+        raise typer.Exit(code=1)
+
+    logger.info("Scanning %s file(s)...", len(_files_to_scan))
+
+    # Placeholder: demonstrate we can access the files
+    for i, file in enumerate(_files_to_scan, 1):
+        logger.debug("Processing file %s/%s: %s", i, len(_files_to_scan), file)
+        # Business logic will go here
+        if file.exists():
+            logger.debug("File exists and is readable: %s", file)
+        else:
+            logger.warning("File not found: %s", file)
+
+    logger.info("✓ Scan complete: %s files processed", len(_files_to_scan))
+    logger.info("Scan completed successfully")
 
 
-async def main():
-    """Main entry point."""
-    # Example: scan some code paths
-    code_paths = [Path("tests/good_ai/good_ai_one.py")]
+# Add more commands here as needed
 
-    # Simple rule override: change IOH-001 severity to warning
-    rule_overrides = {
-        "IOH-001": {"severity": "warning"},
-    }
 
-    # Run scan (logfire automatically logs everything)
-    findings = await scan_codebase(
-        code_paths=code_paths,
-        rule_overrides=rule_overrides,
-    )
-
-    # Save results to timestamped JSON file
-    save_findings_to_file(findings)
+def main() -> None:
+    """Entry point for the CLI application."""
+    app()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

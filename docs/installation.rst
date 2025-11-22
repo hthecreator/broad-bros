@@ -37,13 +37,12 @@ Before you work on your project, activate the corresponding environment:
     . venv/bin/activate
 
 
-Install broad_bros
+Install neops
 -------------------------------------
 
 Within the activated environment, use the following command to install
-broad_bros:
+neops:
 
 .. code-block:: sh
 
-    (venv) cd broad_bros
     (venv) pip install .

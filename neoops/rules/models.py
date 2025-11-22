@@ -1,17 +1,10 @@
 """Pydantic models for rules."""
 
-from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
-
-class Severity(str, Enum):
-    """Severity levels for findings."""
-
-    ERROR = "error"
-    WARNING = "warning"
-    INFO = "info"
+from neoops.models import Severity
 
 
 class RuleClass(BaseModel):

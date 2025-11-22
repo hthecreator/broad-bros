@@ -69,7 +69,7 @@ def setup_logging(verbosity: int = 0) -> logging.Logger:
         _silence_noisy_loggers()
 
     level_name = logging.getLevelName(level)
-    logger.debug(f"Logging configured: verbosity={verbosity} level={level_name}")
+    logger.debug("Logging configured: verbosity=%s level=%s", verbosity, level_name)
 
     return logger
 

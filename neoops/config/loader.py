@@ -6,7 +6,8 @@ from typing import Any
 
 import yaml
 
-from neoops.rules.models import Rule, RuleClass, Severity
+from neoops.models import Severity
+from neoops.rules.models import Rule, RuleClass
 
 
 def get_config_dir() -> Path:

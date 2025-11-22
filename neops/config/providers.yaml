@@ -1,0 +1,15 @@
+# Provider Configuration
+# Providers are categorized as dangerous, safe, or worrying based on safety assessments
+
+safe:
+  - OpenAI
+  - Anthropic
+  - Google
+  - Meta
+  - Mistral AI
+
+worrying:
+  - DeepSeek
+
+dangerous:
+  - Zhipu AI

@@ -3,14 +3,16 @@
 This module defines the command-line interface structure and commands.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Optional
 
 import typer
 
-from neops.config import PyProjectNotFoundError, PyProjectParseError, get_project_config
+from neops.cli_config import PyProjectNotFoundError, PyProjectParseError, find_repo_root, get_project_config
 from neops.file_scanner import GitNotFoundError, resolve_file_paths
 from neops.logging_config import get_logger, setup_logging
+from neops.scanner import save_findings_to_file, scan_codebase
 
 # Get logger for this module
 logger = get_logger(__name__)
@@ -25,21 +27,21 @@ _files_to_scan: list[Path] = []
 
 @app.callback()
 def main_callback(
-    verbose: int = typer.Option(
+    verbose: int = typer.Option(  # noqa: B008
         0,
         "--verbose",
         "-v",
         count=True,
         help=("Increase verbosity (-v for INFO, -vv for DEBUG, -vvv for all debug)"),
     ),
-    pyproject: Optional[Path] = typer.Option(
+    pyproject: Optional[Path] = typer.Option(  # noqa: B008
         None,
         "--pyproject",
         "-p",
         help=("Path to pyproject.toml file or directory (default: repo root)"),
         exists=False,  # We'll handle validation ourselves
     ),
-    files: Optional[list[Path]] = typer.Option(
+    files: Optional[list[Path]] = typer.Option(  # noqa: B008
         None,
         "--file",
         "-f",
@@ -62,36 +64,19 @@ def main_callback(
         _project_config = get_project_config(custom_path=pyproject)
         logger.debug("Configuration loaded successfully from pyproject.toml")
     except PyProjectNotFoundError as e:
-        logger.error(f"Configuration error: {e}")
-        raise typer.Exit(code=1)
+        logger.error("Configuration error: %s", e)
+        raise typer.Exit(code=1) from None
     except PyProjectParseError as e:
-        logger.error(f"Failed to parse pyproject.toml: {e}")
-        raise typer.Exit(code=1)
+        logger.error("Failed to parse pyproject.toml: %s", e)
+        raise typer.Exit(code=1) from None
 
     # Resolve files to scan
     try:
         _files_to_scan = resolve_file_paths(paths=files)
-        logger.info(f"Resolved {len(_files_to_scan)} file(s) to scan")
+        logger.info("Resolved %s file(s) to scan", len(_files_to_scan))
     except (FileNotFoundError, GitNotFoundError) as e:
-        logger.error(f"File resolution error: {e}")
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def hello(
-    name: str = typer.Argument(..., help="Name of person to greet"),
-) -> None:
-    """Say hello to someone.
-
-    This is a sample command demonstrating the CLI structure.
-    """
-    logger.debug(f"Starting hello command with name: {name}")
-    logger.info(f"Greeting {name}")
-
-    # Use print for actual output (not logging)
-    print(f"Hello {name}")
-
-    logger.debug("Hello command completed successfully")
+        logger.error("File resolution error: %s", e)
+        raise typer.Exit(code=1) from None
 
 
 @app.command()
@@ -109,20 +94,20 @@ def show_config() -> None:
     # Display project metadata
     if "project" in _project_config:
         project = _project_config["project"]
-        print("Project Configuration:")
-        print(f"  Name: {project.get('name', 'N/A')}")
-        print(f"  Version: {project.get('version', 'N/A')}")
-        print(f"  Description: {project.get('description', 'N/A')}")
+        logger.info("Project Configuration:")
+        logger.info("  Name: %s", project.get("name", "N/A"))
+        logger.info("  Version: %s", project.get("version", "N/A"))
+        logger.info("  Description: %s", project.get("description", "N/A"))
 
         if "dependencies" in project:
-            print(f"\nDependencies ({len(project['dependencies'])}):")
+            logger.info("\nDependencies (%s):", len(project["dependencies"]))
             for dep in project["dependencies"]:
-                print(f"  - {dep}")
+                logger.info("  - %s", dep)
 
         logger.info("Configuration displayed successfully")
     else:
         logger.warning("No [project] section found in pyproject.toml")
-        print("No project configuration found in pyproject.toml")
+        logger.warning("No project configuration found in pyproject.toml")
 
 
 @app.command()
@@ -135,43 +120,56 @@ def list_files() -> None:
 
     if not _files_to_scan:
         logger.warning("No files to scan")
-        print("No files to scan")
         raise typer.Exit(code=1)
 
-    print(f"Files to scan ({len(_files_to_scan)}):")
+    logger.info("Files to scan (%s):", len(_files_to_scan))
     for file in sorted(_files_to_scan):
-        print(f"  {file}")
+        logger.info("  %s", file)
 
-    logger.info(f"Listed {len(_files_to_scan)} file(s)")
+    logger.info("Listed %s file(s)", len(_files_to_scan))
 
 
 @app.command()
-def scan() -> None:
-    """Scan the discovered or specified files.
+def scan(
+    output_dir: Optional[Path] = typer.Option(  # noqa: B008
+        None,
+        "--output-dir",
+        "-o",
+        help="Directory to save scan results (default: current directory)",
+        exists=False,
+    ),
+) -> None:
+    """Scan the discovered or specified files for AI safety issues.
 
-    This is a placeholder command demonstrating file access.
-    Business logic for actual scanning will be added later.
+    Runs all enabled rules against the files and generates a report.
     """
     logger.debug("Starting scan operation")
 
     if not _files_to_scan:
         logger.error("No files to scan")
-        print("No files to scan")
         raise typer.Exit(code=1)
 
-    print(f"Scanning {len(_files_to_scan)} file(s)...")
+    logger.info("Scanning %s file(s)...", len(_files_to_scan))
 
-    # Placeholder: demonstrate we can access the files
-    for i, file in enumerate(_files_to_scan, 1):
-        logger.debug(f"Processing file {i}/{len(_files_to_scan)}: {file}")
-        # Business logic will go here
-        if file.exists():
-            logger.debug(f"File exists and is readable: {file}")
-        else:
-            logger.warning(f"File not found: {file}")
+    logger.info("Scanning files: %s", _files_to_scan)
+    project_root = find_repo_root() if _project_config else None
+    logger.info("Project root: %s", project_root)
+    # Run async scan
+    findings = asyncio.run(
+        scan_codebase(
+            code_paths=_files_to_scan,
+            project_root=find_repo_root() if _project_config else None,
+        )
+    )
 
-    print(f"✓ Scan complete: {len(_files_to_scan)} files processed")
-    logger.info("Scan completed successfully")
+    # Save results to timestamped JSON file
+    output_path = save_findings_to_file(findings, output_dir=output_dir)
+
+    # Log summary
+    summary = findings.summary
+    logger.info("Scan complete!")
+    logger.info("Summary: %s errors, %s warnings, %s info", summary["error"], summary["warning"], summary["info"])
+    logger.info("Results saved to: %s", output_path)
 
 
 # Add more commands here as needed

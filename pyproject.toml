@@ -1,5 +1,5 @@
 [project]
-name = "broad_bros"
+name = "neops"
 version = "0.1.0"
 description = ""
 authors = [
@@ -37,12 +37,13 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/broad_bros"]
+packages = ["src/neops"]
 
 [tool.hatch.version]
 source = "vcs"
 
 [project.scripts]
+neops = "neops.main:main"  # This makes 'neops' command available
 post-install = "pre_commit:install_hooks"
 
 [tool.ruff]
@@ -70,7 +71,7 @@ select = [
 unfixable = ["B"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["broad_bros"]
+known-first-party = ["neops"]
 
 [tool.ruff.format]
 quote-style = "double"

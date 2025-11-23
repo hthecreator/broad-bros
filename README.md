@@ -1,6 +1,6 @@
 # neops
 
-A CLI tool for network operations and analysis.
+A CLI tool for AI Security scanning in code.
 
 ## Description
 

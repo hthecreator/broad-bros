@@ -7,7 +7,7 @@ A CLI tool for AI Security scanning in code.
 `neops` is a command-line interface tool designed for network operations. The tool can be run locally using `uv` or deployed via Docker for consistent cross-machine execution.
 
 ## Getting started
-This project makes use of `uv` for python version management and for virtual environment/ dependency management. To get started with these tools, you can refer to [Python dev](https://www.notion.so/facultyai/uv-25c296bcfe388052821be36e24c8297e?source=copy_link) in Notion.
+This project makes use of `uv` for python version management and for virtual environment/ dependency management.
 
 ```bash
 #Clone the repository using your preferred method(SSH vs HTTPS)
@@ -156,12 +156,12 @@ def your_command(arg: str):
     """Description of your command"""
     logger.debug(f"Starting your_command with arg: {arg}")
     logger.info("Processing data...")
-    
+
     # Your implementation here
     # Use print() for actual output
     # Use logger for informational/debug messages
     print(f"Result: {arg}")
-    
+
     logger.debug("Command completed successfully")
 ```
 
@@ -211,7 +211,3 @@ If you get `command not found: neops` when trying to run locally:
 - Ensure you're in the project root directory
 - Check that all required files (README.md, pyproject.toml, etc.) are present
 - Make sure `.dockerignore` doesn't exclude necessary files
-
-## Note
-
-This project has been setup using Faculty's [consultancy-cookie](https://gitlab.com/facultyai/faculty-tools/consultancy-cookie).

@@ -137,52 +137,21 @@ Source: {rule.source.name}"""
         worrying_providers = provider_config.get_worrying_providers()
         dangerous_providers = provider_config.get_dangerous_providers()
 
-        # Check if we have MP or DM rules
+        # Check if we have MP rules
         has_mp_rules = any(rule.rule_class.id == "MP" for rule in rules)
-        has_dm_rules = any(rule.rule_class.id == "DM" for rule in rules)
 
-        if has_mp_rules or has_dm_rules:
+        if has_mp_rules:
             context_section = "\n\nProvider and Model Information:\n"
-            context_section += (
-                "This information is relevant for Model Provider (MP) and Deprecated Models (DM) rules.\n\n"
-            )
+            context_section += "This information is relevant for Model Provider (MP) rules.\n\n"
 
-            if has_mp_rules:
-                context_section += "Provider Safety Levels:\n"
-                if safe_providers:
-                    context_section += f"  Safe providers: {', '.join(safe_providers)}\n"
-                if worrying_providers:
-                    context_section += f"  Worrying providers: {', '.join(worrying_providers)}\n"
-                if dangerous_providers:
-                    context_section += f"  Dangerous providers: {', '.join(dangerous_providers)}\n"
-                context_section += "\n"
-
-            if has_dm_rules:
-                context_section += "Deprecated and Legacy Models by Provider:\n"
-                context_section += (
-                    "CRITICAL: Each model belongs to a specific provider. "
-                    "Only check for deprecated models from the provider that matches the rule's organization.\n"
-                )
-                context_section += "For example:\n"
-                context_section += (
-                    "- OpenAI-001 rule should ONLY check for OpenAI deprecated models "
-                    "(e.g., text-davinci-003, text-davinci-002)\n"
-                )
-                context_section += "- Anthropic-001 rule should ONLY check for Anthropic deprecated models\n"
-                context_section += (
-                    "- Do NOT confuse models from different providers "
-                    "(e.g., text-davinci-003 is OpenAI, NOT Anthropic)\n\n"
-                )
-                for provider_name, provider_info in provider_config.providers.items():
-                    if provider_info.models.deprecated or provider_info.models.legacy:
-                        context_section += f"  {provider_name}:\n"
-                        if provider_info.models.deprecated:
-                            deprecated_ids = [m.model_id for m in provider_info.models.deprecated]
-                            context_section += f"    Deprecated: {', '.join(deprecated_ids)}\n"
-                        if provider_info.models.legacy:
-                            legacy_ids = [m.model_id for m in provider_info.models.legacy]
-                            context_section += f"    Legacy: {', '.join(legacy_ids)}\n"
-                context_section += "\n"
+            context_section += "Provider Safety Levels:\n"
+            if safe_providers:
+                context_section += f"  Safe providers: {', '.join(safe_providers)}\n"
+            if worrying_providers:
+                context_section += f"  Worrying providers: {', '.join(worrying_providers)}\n"
+            if dangerous_providers:
+                context_section += f"  Dangerous providers: {', '.join(dangerous_providers)}\n"
+            context_section += "\n"
 
     return f"""Analyze the following code files to determine which of the AI safety rules apply.
 
@@ -197,13 +166,6 @@ checked against every file. This is not optional.
 
 Rules to check:
 {rules_section}{context_section}
-CRITICAL: When checking Deprecated Models (DM) rules, you MUST match the rule's organization with the provider:
-- Rules with organization "OpenAI" (e.g., OpenAI-001) should ONLY check for OpenAI deprecated models
-- Rules with organization "Anthropic" (e.g., Anthropic-001) should ONLY check for Anthropic deprecated models
-- Do NOT confuse models from different providers. For example, "text-davinci-003" is an OpenAI model, \
-NOT an Anthropic model.
-- Each provider's deprecated models are listed under that provider's name in the \
-"Deprecated and Legacy Models by Provider" section above.
 
 You decide the best approach to analyze the code using the available tools. However, you MUST ensure:
 - ALL {len(code_paths)} files are examined (no file can be skipped)

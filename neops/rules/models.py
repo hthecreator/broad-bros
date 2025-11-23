@@ -26,7 +26,7 @@ class Rule(BaseModel):
     """Definition of an AI safety rule."""
 
     organization: str = Field(
-        ..., description="Organization/guideline source (e.g., 'OWASP', 'NEops', 'OpenAI', 'Anthropic')"
+        ..., description="Organization/guideline source (e.g., 'OWASP', 'NEOps', 'OpenAI', 'Anthropic')"
     )
     code: str = Field(..., description="Rule code within the organization (e.g., '001', '002')")
     rule_class: RuleClass = Field(..., description="The rule class this rule belongs to (this is the category)")

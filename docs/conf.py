@@ -67,7 +67,6 @@ extensions = [
     "sphinx.ext.ifconfig",
     "sphinx.ext.mathjax",
     "sphinx.ext.napoleon",
-    "faculty_sphinx_theme",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -126,7 +125,6 @@ pygments_style = "sphinx"
 
 # -- Options for HTML output ---------------------------------------------------
 
-html_theme = "faculty-sphinx-theme"
 
 html_theme_options = {
     # Options for including navigation bar at the top

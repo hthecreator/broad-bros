@@ -623,18 +623,6 @@ wheels = [
 ]
 
 [[package]]
-name = "faculty-sphinx-theme"
-version = "0.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "sphinx-rtd-theme" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/32/31/70d721618532d5cc0ca8849bd8ff0fba7289e55171e10860ec96e8e1a9a9/faculty-sphinx-theme-0.3.1.tar.gz", hash = "sha256:0d8e7d578067da3645df38b848e6764ff0f51bd9058c005af57c8e56e22b3f9f", size = 16706, upload-time = "2021-03-09T00:29:14.259Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/e9/506a70a9813c6cc49daa92ff765170ada8bdf68e8748b38be39e5ba2d9d4/faculty_sphinx_theme-0.3.1-py2.py3-none-any.whl", hash = "sha256:baec629ac05231a8d0076e3ac2e5c5c31d419430d26d672f2390d7d37f6d1690", size = 15614, upload-time = "2021-03-09T00:29:12.593Z" },
-]
-
-[[package]]
 name = "fastavro"
 version = "1.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1472,7 +1460,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "faculty-sphinx-theme" },
     { name = "ipykernel" },
     { name = "nbstripout" },
     { name = "pre-commit" },
@@ -1495,7 +1482,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "faculty-sphinx-theme", specifier = ">=0.3.1" },
     { name = "ipykernel", specifier = ">=6.30.1" },
     { name = "nbstripout", specifier = ">=0.8.1" },
     { name = "pre-commit", specifier = ">=4.3.0" },
@@ -2636,18 +2622,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/38/ad/4360e50ed56cb483667b8e6dadf2d3fda62359593faabbe749a27c4eaca6/sphinx-8.2.3.tar.gz", hash = "sha256:398ad29dee7f63a75888314e9424d40f52ce5a6a87ae88e7071e80af296ec348", size = 8321876, upload-time = "2025-03-02T22:31:59.658Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/31/53/136e9eca6e0b9dc0e1962e2c908fbea2e5ac000c2a2fbd9a35797958c48b/sphinx-8.2.3-py3-none-any.whl", hash = "sha256:4405915165f13521d875a8c29c8970800a0141c14cc5416a38feca4ea5d9b9c3", size = 3589741, upload-time = "2025-03-02T22:31:56.836Z" },
-]
-
-[[package]]
-name = "sphinx-rtd-theme"
-version = "0.4.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "sphinx" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ed/73/7e550d6e4cf9f78a0e0b60b9d93dba295389c3d271c034bf2ea3463a79f9/sphinx_rtd_theme-0.4.3.tar.gz", hash = "sha256:728607e34d60456d736cc7991fd236afb828b21b82f956c5ea75f94c8414040a", size = 5391190, upload-time = "2019-02-12T19:40:00.525Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/b4/4df37087a1d36755e3a3bfd2a30263f358d2dea21938240fa02313d45f51/sphinx_rtd_theme-0.4.3-py2.py3-none-any.whl", hash = "sha256:00cf895504a7895ee433807c62094cf1e95f065843bf3acd17037c3e9a2becd4", size = 6387547, upload-time = "2019-02-12T19:39:24.722Z" },
 ]
 
 [[package]]

@@ -78,6 +78,21 @@ class NeopsAgent:
             agent: The Pydantic AI agent to use
         """
         self.agent = agent
+        # Create a reusable multi-rule agent to avoid tool registration conflicts
+        # when check_multiple_rules is called multiple times (e.g., in parallel for different organizations)
+        self.multi_rule_agent = Agent(
+            settings.agent_model,
+            output_type=MultiRuleAnalysisResult,
+            system_prompt=SYSTEM_PROMPT,
+            tools=[
+                read_file,  # Single file read
+                read_files,  # Batch file read - RECOMMENDED
+                parse_ast,  # Single file AST
+                parse_asts,  # Batch AST - RECOMMENDED
+                search_pattern,  # Single file search
+                search_patterns,  # Batch search - RECOMMENDED
+            ],
+        )
 
     async def check_multiple_rules(
         self,
@@ -132,23 +147,7 @@ class NeopsAgent:
             provider_config=provider_config,
         )
 
-        # Create a temporary agent with MultiRuleAnalysisResult output type
-        from pydantic_ai import Agent
-
-        multi_rule_agent = Agent(
-            settings.agent_model,
-            output_type=MultiRuleAnalysisResult,
-            system_prompt=SYSTEM_PROMPT,
-            tools=[
-                read_file,  # Single file read
-                read_files,  # Batch file read - RECOMMENDED
-                parse_ast,  # Single file AST
-                parse_asts,  # Batch AST - RECOMMENDED
-                search_pattern,  # Single file search
-                search_patterns,  # Batch search - RECOMMENDED
-            ],
-        )
-
+        # Use the reusable multi-rule agent (created once in __init__ to avoid tool registration conflicts)
         # Run the agent with logfire span that includes metadata
         # Include org in span name to make it visible in nested logs
         # This will wrap the automatic pydantic-ai instrumentation
@@ -161,7 +160,7 @@ class NeopsAgent:
             file_paths=code_paths_str,
             file_count=len(code_paths_str),
         ):
-            result = await multi_rule_agent.run(prompt)
+            result = await self.multi_rule_agent.run(prompt)
 
         # Extract structured result
         if isinstance(result.output, MultiRuleAnalysisResult):

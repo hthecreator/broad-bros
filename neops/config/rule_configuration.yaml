@@ -21,19 +21,15 @@ organizations:
   - id: OWASP
     name: OWASP
     description: OWASP AI Security Guidelines
-    website: https://owasp.org/
 
   - id: NEOps
     name: Neops
     description: Neops AI Safety Rules
-    website: null
 
   - id: OpenAI
     name: OpenAI
     description: OpenAI Safety Guidelines
-    website: https://openai.com/
 
   - id: Anthropic
     name: Anthropic
     description: Anthropic Safety Guidelines
-    website: https://anthropic.com/

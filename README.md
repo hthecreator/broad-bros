@@ -1,213 +1,273 @@
 # neops
 
-A CLI tool for AI Security scanning in code.
+**AI Safety code scanner**
 
-## Description
+`neops` is a security scanning tool that detects AI-related vulnerabilities in your codebase. It identifies unsafe handling of LLM outputs, deprecated model usage, risky provider configurations, and other AI security issues.
 
-`neops` is a command-line interface tool designed for network operations. The tool can be run locally using `uv` or deployed via Docker for consistent cross-machine execution.
+## The Idea
 
-## Getting started
-This project makes use of `uv` for python version management and for virtual environment/ dependency management.
+As AI models become integrated into applications, new security risks emerge. `neops` helps you catch these issues early by scanning your code for:
 
-```bash
-#Clone the repository using your preferred method(SSH vs HTTPS)
-git clone <repo_url>
-cd <repo>
-```
-```bash
-#Create the uv virtual environment (if you don't have a compatible version of python on your system
-#you might have to install it !!Danger platform user see uv notes in Notion above!!)
-uv sync
-```
-```bash
-#you can now run all packages installed such as pre-commit, ruff and pytest using
-uv run <package>
+- **Improper Output Handling**: LLM outputs executed, rendered, or injected without sanitization
+- **Deprecated Models**: Usage of models that have been deprecated or are scheduled for deprecation
+- **Risky Providers**: Model providers flagged as concerning or dangerous
+- **Missing Safety Practices**: Missing safety identifiers and other security best practices
 
-# Make sure to install the pre-commit hooks
-uv run pre-commit install
-```
+**Trusted Sources**: Rules are based on guidelines from trusted AI safety organizations including **OWASP**, **OpenAI**, and **Anthropic**. We also maintain an up-to-date list of active, legacy, and deprecated models from major providers.
 
-## Running the CLI
+The tool uses AI Agents analysis to understand context and detect vulnerabilities that static analysis alone might miss.
 
-### Available Commands
+## Installation
 
-- **`hello`**: Greet someone (sample command)
-- **`show-config`**: Display the loaded project configuration from pyproject.toml
-
-### Local Development Usage
-
-Once you've set up the environment with `uv sync`, you can run the CLI tool using:
+Install `neops` using pip:
 
 ```bash
-# Get help
-uv run neops --help
-
-# Example: Run the hello command
-uv run neops hello World
-
-# With verbose output (INFO level)
-uv run neops -v hello World
-
-# With debug output (DEBUG level - shows timestamps and function names)
-uv run neops -vv hello World
-
-# With all debug output (includes third-party library logs)
-uv run neops -vvv hello World
+pip install neops
 ```
 
-#### Verbosity Levels
-
-The CLI supports incremental verbosity flags following Unix conventions:
-
-- **No flag (default)**: Only shows WARNING and ERROR messages
-- **`-v` (INFO)**: Shows informational messages about what the tool is doing
-- **`-vv` (DEBUG)**: Shows detailed debug information with timestamps and function names
-- **`-vvv` (TRACE)**: Shows all debug information including from third-party libraries
-
-#### Configuration File
-
-The CLI automatically loads your `pyproject.toml` file. You can specify a custom path:
+Or install from source:
 
 ```bash
-# Use default (searches for pyproject.toml at repository root)
-uv run neops show-config
-
-# Specify a custom path to pyproject.toml file
-uv run neops -p /path/to/pyproject.toml show-config
-
-# Specify a directory containing pyproject.toml
-uv run neops -p /path/to/project/ show-config
-
-# View what was loaded with verbose output
-uv run neops -vv -p /custom/path show-config
+git clone https://github.com/your-org/neops.git
+cd neops
+pip install -e .
 ```
 
-### Docker Usage
+## Quick Start
 
-For consistent execution across different machines, use Docker:
+### Basic Usage
 
-#### Building the Docker Image
+Scan your entire codebase (automatically detects git-tracked files):
+
+```bash
+neops scan
+```
+
+Scan specific files or directories:
+
+```bash
+neops scan -f path/to/file -f path/to/directory/
+```
+
+View files that will be scanned:
+
+```bash
+neops list-files
+```
+
+### Example Output
+
+After scanning, `neops` generates two report files:
+- **JSON report**: Machine-readable results (`neops_scan_results_YYYYMMDD_HHMMSS.json`)
+- **Markdown report**: Human-readable report with detailed findings (`neops_scan_results_YYYYMMDD_HHMMSS.md`)
+
+Example scan output:
+
+```
+Scanning 15 file(s)...
+Scan complete!
+Summary: 3 errors, 3 warnings, 4 info
+Results saved to:
+  JSON: neops_scan_results_20251123_172405.json
+  Markdown: neops_scan_results_20251123_172405.md
+```
+
+## What Errors Does neops Find?
+
+`neops` detects several categories of AI security issues:
+
+### 🔴 Errors (Critical Issues)
+
+**OWASP-001: LLM output executed without sanitization**
+- Detects direct execution of LLM outputs (exec, eval, system calls) without validation
+
+**OWASP-003: LLM output used in DB/file path without parameterization**
+- Detects SQL injection, file path injection, and command injection risks from unsanitized LLM outputs
+
+**NEOps-002: Model provider is listed as Dangerous**
+- Flags usage of model providers classified as dangerous
+
+### 🟡 Warnings (Important Issues)
+
+**OWASP-002: LLM output rendered to browser without encoding**
+- Detects unsafe HTML rendering without proper encoding or escaping
+
+**NEOps-001: Model provider is listed as Worrying**
+- Flags usage of model providers classified as concerning
+
+**NEOps-004: Legacy model used**
+- Detects models scheduled for future deprecation (e.g., `claude-3-5-haiku-20241022`)
+
+### ℹ️ Info (Best Practices)
+
+**NEOps-003: Deprecated model used**
+- Detects officially deprecated models from major providers (OpenAI, Anthropic, etc.)
+
+**OpenAI-002: Safety identifier not provided in API requests**
+- Detects missing safety identifiers in OpenAI API requests
+
+### Example Findings
+
+Here's what a finding looks like in the report:
+
+```markdown
+#### 🔴 OWASP-001 - LLM output executed without sanitization (ERROR)
+
+**File:** `src/code_review.js`
+**Line:** 145
+**Message:** Direct execution of LLM output without any sanitization or validation.
+
+**Reasoning:**
+> The code directly executes LLM-generated content without sanitization.
+
+**Remediation:**
+> Avoid executing raw LLM output. Sanitize and validate any LLM-generated content.
+```
+
+## Configuration via pyproject.toml
+
+You can customize rule behavior in your `pyproject.toml` file. Add a `[tool.neops.rules]` section to override severity levels or enable/disable specific rules.
+
+### Disable a Rule
+
+To disable a rule entirely:
+
+```toml
+[tool.neops.rules]
+"OWASP-002" = { enabled = false }
+```
+
+### Change Rule Severity
+
+To change the severity level of a rule:
+
+```toml
+[tool.neops.rules]
+"OWASP-001" = { severity = "warning" }  # Change from error to warning
+"NEOps-003" = { severity = "error" }    # Change from info to error
+```
+
+### Multiple Overrides
+
+You can combine both options:
+
+```toml
+[tool.neops.rules]
+"OWASP-001" = { severity = "warning", enabled = true }
+"OWASP-002" = { enabled = false }
+"NEOps-003" = { severity = "error" }
+```
+
+### Available Severity Levels
+
+- `error` - Critical issues that should be fixed immediately
+- `warning` - Important issues that should be addressed
+- `info` - Best practice recommendations
+
+### Rule IDs
+
+Rule IDs follow the format `{ORGANIZATION}-{CODE}`:
+
+- `OWASP-001`, `OWASP-002`, `OWASP-003` - OWASP AI security guidelines
+- `NEOps-001`, `NEOps-002`, `NEOps-003`, `NEOps-004` - Neops rules (model provider and deprecation checks)
+- `OpenAI-002` - OpenAI safety guidelines
+- `Anthropic-*` - Anthropic safety guidelines (as available)
+
+## Advanced Usage
+
+### Custom pyproject.toml Location
+
+Specify a custom path to `pyproject.toml`:
+
+```bash
+neops -p /path/to/pyproject.toml scan
+neops -p /path/to/project/ scan  # Directory containing pyproject.toml
+```
+
+### Custom Output Directory
+
+```bash
+neops scan -o /path/to/results/
+```
+
+### Environment Variables
+
+**Required**: `OPENAI_API_KEY` is always needed to run the code. Set your OpenAI API key for AI-powered analysis:
+
+```bash
+export OPENAI_API_KEY=your-api-key
+```
+
+**Model Support**: We currently use OpenAI o3 for analysis. We plan to support more OpenAI reasoning models and Anthropic in the future. We recommend o3 for value-for-money.
+
+## Docker Usage
+
+For consistent execution across different machines:
 
 ```bash
 # Build the image
 docker build -t neops:latest .
-```
 
-#### Running with Docker
+# Run scan
+docker run --rm -v $(pwd):/workspace -w /workspace neops:latest scan
 
-```bash
-# Show help
-docker run --rm neops:latest --help
-
-# Run the hello command
-docker run --rm neops:latest hello World
-
-# Run with verbose output
-docker run --rm neops:latest -v hello World
-
-# Run with debug output
-docker run --rm neops:latest -vv hello World
-
-# Mount local files if needed (e.g., for data processing)
-docker run --rm -v $(pwd)/data:/data neops:latest hello World
-
-# Interactive mode (if needed)
-docker run --rm -it neops:latest hello World
-```
-
-#### Docker Compose (Optional)
-
-For more complex setups, you can use docker-compose:
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  neops:
-    build: .
-    volumes:
-      - ./data:/data
-    command: --help  # Override with actual command
-```
-
-Then run:
-```bash
-# Basic usage
-docker-compose run --rm neops hello World
-
-# With verbose output
-docker-compose run --rm neops -v hello World
-```
-
-## Local development
-Relying on the remote CI pipeline to check your code leads to slow development iteration. Locally, you can trigger:
-
-- linting & formatting checks: `uv run pre-commit run --all-files`
-- tests: `uv run pytest tests/`
-
-## Adding New Commands
-
-To add new commands to the CLI, edit `src/neops/main.py`:
-
-```python
-@app.command()
-def your_command(arg: str):
-    """Description of your command"""
-    logger.debug(f"Starting your_command with arg: {arg}")
-    logger.info("Processing data...")
-
-    # Your implementation here
-    # Use print() for actual output
-    # Use logger for informational/debug messages
-    print(f"Result: {arg}")
-
-    logger.debug("Command completed successfully")
-```
-
-**Logging Best Practices:**
-- Use `logger.debug()` for detailed debugging information
-- Use `logger.info()` for general informational messages
-- Use `logger.warning()` for warnings that don't stop execution
-- Use `logger.error()` for errors
-- Use `print()` for actual command output (not logs)
-
-After adding commands, rebuild the Docker image to include the changes:
-```bash
-docker build -t neops:latest .
-```
-
-## Distribution
-
-### Sharing the Docker Image
-
-To share the tool with others:
-
-```bash
-# Save image to a tar file
-docker save neops:latest -o neops-latest.tar
-
-# Load image on another machine
-docker load -i neops-latest.tar
-```
-
-Or push to a registry:
-```bash
-# Tag for registry
-docker tag neops:latest your-registry/neops:latest
-
-# Push to registry
-docker push your-registry/neops:latest
+# With custom pyproject.toml
+docker run --rm -v $(pwd):/workspace -w /workspace neops:latest -p /workspace/pyproject.toml scan
 ```
 
 ## Troubleshooting
 
-### Command not found (local)
-If you get `command not found: neops` when trying to run locally:
-- Always use `uv run neops <args>` instead of `neops <args>`
-- The `neops` command is only available within the uv-managed environment
+If `neops` command is not found, try: `python -m neops scan`
 
-### Docker build fails
-- Ensure you're in the project root directory
-- Check that all required files (README.md, pyproject.toml, etc.) are present
-- Make sure `.dockerignore` doesn't exclude necessary files
+If you get "No files to scan", specify files explicitly: `neops scan -f path/to/file`
+
+If `pyproject.toml` overrides aren't being applied, ensure you're in the repository root where `pyproject.toml` is located.
+
+## Contributing
+
+We welcome contributions! Here's how to get started:
+
+### Development Setup
+
+This project uses `uv` for Python version and dependency management:
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/neops.git
+cd neops
+
+# Create virtual environment and install dependencies
+uv sync
+
+# Install pre-commit hooks
+uv run pre-commit install
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+uv run pytest tests/
+
+# Run with coverage
+uv run pytest tests/ --cov=neops
+```
+
+### Code Quality
+
+```bash
+# Run linting and formatting
+uv run pre-commit run --all-files
+```
+
+### Adding New Rules
+
+To add new security rules, edit the YAML configuration files in `neops/config/`:
+- `rules.yaml` - Define new rules
+- `rule_configuration.yaml` - Configure rule classes and organizations
+
+See existing rules for examples of rule structure and patterns.
+
+## License
+
+See [LICENSE.txt](LICENSE.txt) for details.

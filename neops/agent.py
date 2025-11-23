@@ -1,12 +1,14 @@
 """Neops AI agent using Pydantic AI for rule checking."""
 
+import asyncio
 from pathlib import Path
 
+import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from neops.models import Finding, RuleConfig
-from neops.prompts import SYSTEM_PROMPT, build_multi_rule_check_prompt, build_rule_check_prompt
+from neops.prompts import SYSTEM_PROMPT, build_multi_rule_check_prompt
 from neops.rules.models import Rule
 from neops.settings import settings
 from neops.tools import parse_ast, parse_asts, read_file, read_files, search_pattern, search_patterns
@@ -77,80 +79,13 @@ class NeopsAgent:
         """
         self.agent = agent
 
-    async def check_rule(self, rule: Rule, code_path: Path, rule_config: RuleConfig) -> RuleCheckResult:
-        """Check if a rule applies to the given code path.
-
-        Args:
-            rule: The rule definition to check
-            code_path: Path to the code file to analyze
-            rule_config: Configuration for this rule (enable/disable, severity)
-
-        Returns:
-            RuleCheckResult with findings and reasoning
-        """
-        # Skip if rule is disabled
-        if not rule_config.enabled or not rule.enabled:
-            return RuleCheckResult(
-                applies=False,
-                findings=[],
-                reasoning=f"Rule {rule.rule_id} is disabled",
-            )
-
-        # Prepare the prompt for the agent
-        code_path_str = str(code_path)
-        prompt = build_rule_check_prompt(
-            rule_id=rule.rule_id,
-            rule_name=rule.name,
-            rule_description=rule.description,
-            category=rule.category,
-            severity=rule_config.severity.value,
-            code_path=code_path_str,
-        )
-
-        # Run the agent
-        result = await self.agent.run(prompt)
-
-        # Extract structured result from the agent
-        # pydantic_ai returns AgentRunResult with .output attribute
-        if isinstance(result.output, AgentAnalysisResult):
-            analysis = result.output
-        else:
-            # Fallback if result is not structured
-            analysis = AgentAnalysisResult(
-                applies=False,
-                violations=[],
-                reasoning=str(result.output) if result.output else "No analysis provided",
-                remediation=None,
-            )
-
-        # Convert agent analysis to findings
-        findings = []
-        for violation in analysis.violations:
-            line = violation.get("line", 1)
-            message = violation.get("message", rule.description)
-            findings.append(
-                Finding(
-                    rule_id=rule.rule_id,
-                    severity=rule_config.severity,
-                    file=code_path,
-                    line=int(line) if isinstance(line, (int, str)) else 1,
-                    message=message,
-                    reasoning=analysis.reasoning,
-                    remediation=analysis.remediation,
-                )
-            )
-
-        return RuleCheckResult(
-            applies=analysis.applies,
-            findings=findings,
-            reasoning=analysis.reasoning,
-        )
-
     async def check_multiple_rules(
         self,
         rules: list[Rule],
         rule_configs: list[RuleConfig],
         code_paths: list[Path],
+        provider_config=None,
+        organization: str | None = None,
     ) -> list[tuple[Rule, RuleCheckResult]]:
         """Check multiple rules against multiple code files in one pass.
 
@@ -158,6 +93,7 @@ class NeopsAgent:
             rules: List of rules to check
             rule_configs: List of rule configs corresponding to the rules
             code_paths: List of paths to code files to analyze
+            provider_config: Optional ProviderConfig for MP and DM rules
 
         Returns:
             List of tuples (rule, result) for each rule checked.
@@ -180,13 +116,20 @@ class NeopsAgent:
 
         enabled_rules, enabled_configs = zip(*enabled_rules_and_configs, strict=True)
 
-        # Build prompt with all rules and all code paths
-
+        # Extract metadata for logging
+        rule_ids = [rule.rule_id for rule in enabled_rules]
+        organizations = list(set(rule.organization for rule in enabled_rules))
         code_paths_str = [str(p) for p in existing_paths]
+
+        # Use provided organization or derive from rules
+        org_str = organization if organization else (", ".join(organizations) if organizations else "unknown")
+
+        # Build prompt with all rules and all code paths
         prompt = build_multi_rule_check_prompt(
             rules=list(enabled_rules),
             rule_configs=list(enabled_configs),
             code_paths=code_paths_str,
+            provider_config=provider_config,
         )
 
         # Create a temporary agent with MultiRuleAnalysisResult output type
@@ -206,8 +149,19 @@ class NeopsAgent:
             ],
         )
 
-        # Run the agent (logfire automatically tracks via instrument_pydantic_ai())
-        result = await multi_rule_agent.run(prompt)
+        # Run the agent with logfire span that includes metadata
+        # Include org in span name to make it visible in nested logs
+        # This will wrap the automatic pydantic-ai instrumentation
+        span_name = f"check_multiple_rules:{org_str}" if organization else "check_multiple_rules"
+        with logfire.span(
+            span_name,
+            organization=org_str,
+            rule_ids=rule_ids,
+            rule_count=len(rule_ids),
+            file_paths=code_paths_str,
+            file_count=len(code_paths_str),
+        ):
+            result = await multi_rule_agent.run(prompt)
 
         # Extract structured result
         if isinstance(result.output, MultiRuleAnalysisResult):
@@ -246,6 +200,7 @@ class NeopsAgent:
                     findings.append(
                         Finding(
                             rule_id=rule.rule_id,
+                            rule_name=rule.name,
                             severity=rule_config.severity,
                             file=file_path,
                             line=int(line) if isinstance(line, (int, str)) else 1,
@@ -279,3 +234,68 @@ class NeopsAgent:
                 )
 
         return results
+
+    async def check_rules_by_organization(
+        self,
+        rules: list[Rule],
+        rule_configs: list[RuleConfig],
+        code_paths: list[Path],
+        provider_config=None,
+    ) -> list[tuple[Rule, RuleCheckResult]]:
+        """Check rules grouped by organization (runs agent separately for each organization).
+
+        Args:
+            rules: List of rules to check
+            rule_configs: List of rule configs corresponding to the rules
+            code_paths: List of paths to code files to analyze
+            provider_config: Optional ProviderConfig for MP and DM rules
+
+        Returns:
+            List of tuples (rule, result) for each rule checked.
+            Each result may contain findings across multiple files.
+        """
+        # Group rules by organization
+        from collections import defaultdict
+
+        org_rules: dict[str, list[tuple[Rule, RuleConfig]]] = defaultdict(list)
+        for rule, rule_config in zip(rules, rule_configs, strict=True):
+            if rule.enabled and rule_config.enabled:
+                org_rules[rule.organization].append((rule, rule_config))
+
+        # Run agent separately for each organization in parallel
+        async def check_org(
+            organization: str, org_rule_configs: list[tuple[Rule, RuleConfig]]
+        ) -> list[tuple[Rule, RuleCheckResult]]:
+            """Check rules for a single organization."""
+            org_rules_list, org_configs_list = zip(*org_rule_configs, strict=True)
+            rule_ids = [rule.rule_id for rule in org_rules_list]
+
+            # Wrap with logfire span to identify this organization's run
+            # Include org in span name to make it visible in logs and trackable through nested spans
+            with logfire.span(
+                f"check_organization:{organization}",
+                organization=organization,
+                rule_ids=rule_ids,
+                rule_count=len(rule_ids),
+                file_count=len(code_paths),
+            ):
+                return await self.check_multiple_rules(
+                    rules=list(org_rules_list),
+                    rule_configs=list(org_configs_list),
+                    code_paths=code_paths,
+                    provider_config=provider_config,
+                    organization=organization,  # Pass org to nested function
+                )
+
+        # Create tasks for all organizations
+        tasks = [check_org(organization, org_rule_configs) for organization, org_rule_configs in org_rules.items()]
+
+        # Run all organization checks in parallel
+        org_results_list = await asyncio.gather(*tasks)
+
+        # Flatten results from all organizations
+        all_results: list[tuple[Rule, RuleCheckResult]] = []
+        for org_results in org_results_list:
+            all_results.extend(org_results)
+
+        return all_results

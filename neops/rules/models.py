@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from neops.models import Severity
 
@@ -15,16 +15,29 @@ class RuleClass(BaseModel):
     description: str = Field(..., description="Description of what this rule class covers")
 
 
+class RuleSource(BaseModel):
+    """Source information for a rule."""
+
+    name: str = Field(..., description="Name of the source organization or framework")
+    link: Optional[str] = Field(None, description="URL or reference link to the source")
+
+
 class Rule(BaseModel):
     """Definition of an AI safety rule."""
 
-    rule_id: str = Field(..., description="Unique identifier for the rule (e.g., IOH-001)")
-    rule_class: RuleClass = Field(..., description="The rule class this rule belongs to")
+    organization: str = Field(
+        ..., description="Organization/guideline source (e.g., 'OWASP', 'NEops', 'OpenAI', 'Anthropic')"
+    )
+    code: str = Field(..., description="Rule code within the organization (e.g., '001', '002')")
+    rule_class: RuleClass = Field(..., description="The rule class this rule belongs to (this is the category)")
     name: str = Field(..., description="Human-readable name of the rule")
     description: str = Field(..., description="Detailed description of what the rule checks")
-    category: str = Field(..., description="Category of the rule (e.g., 'output_handling', 'guardrails')")
     severity: Severity = Field(default=Severity.ERROR, description="Default severity level")
     enabled: bool = Field(default=True, description="Whether the rule is enabled")
-    tags: list[str] = Field(default_factory=list, description="Tags for filtering rules")
-    source_framework: Optional[str] = Field(None, description="Framework or standard this rule is based on")
-    source_link: Optional[str] = Field(None, description="URL or reference link to the source of this rule")
+    source: RuleSource = Field(..., description="Source information for this rule")
+
+    @computed_field
+    @property
+    def rule_id(self) -> str:
+        """Auto-generated rule ID from organization and code."""
+        return f"{self.organization}-{self.code}"

@@ -1,15 +1,94 @@
 # Provider Configuration
-# Providers are categorized as dangerous, safe, or worrying based on safety assessments
+# Unified configuration for all providers including safety levels and model status
 
-safe:
-  - OpenAI
-  - Anthropic
-  - Google
-  - Meta
-  - Mistral AI
+providers:
+  OpenAI:
+    safety_level: safe
+    models:
+      live:
+        # Current supported models
+        - gpt-4o
+        - gpt-4-turbo
+        - gpt-3.5-turbo
+        - gpt-4
+      legacy:
+        # Legacy models (scheduled for future deprecation)
+        []
+      deprecated:
+        # Already deprecated models
+        - model_id: text-davinci-003
+          deprecation_date: 2024-01-04
+          retirement_date: 2024-01-04
+          replacement: gpt-3.5-turbo-instruct
+          notes: Deprecated in favor of gpt-3.5-turbo-instruct
+        - model_id: text-davinci-002
+          deprecation_date: 2023-03-01
+          retirement_date: 2024-01-04
+          replacement: gpt-3.5-turbo-instruct
+          notes: null
+        - model_id: text-davinci-001
+          deprecation_date: 2022-11-01
+          retirement_date: 2024-01-04
+          replacement: gpt-3.5-turbo-instruct
+          notes: null
+        - model_id: code-davinci-002
+          deprecation_date: 2023-03-01
+          retirement_date: 2024-01-04
+          replacement: gpt-4 or gpt-3.5-turbo
+          notes: null
+        - model_id: code-davinci-001
+          deprecation_date: 2022-11-01
+          retirement_date: 2024-01-04
+          replacement: gpt-4 or gpt-3.5-turbo
+          notes: null
 
-worrying:
-  - DeepSeek
+  Anthropic:
+    safety_level: safe
+    models:
+      live:
+        # Current supported models
+        - claude-3-5-sonnet
+        - claude-3-opus
+        - claude-3-sonnet
+        - claude-3-haiku
+      legacy:
+        # Legacy models (scheduled for future deprecation)
+        []
+      deprecated:
+        # Already deprecated models
+        []
 
-dangerous:
-  - Zhipu AI
+  Google:
+    safety_level: safe
+    models:
+      live: []
+      legacy: []
+      deprecated: []
+
+  Meta:
+    safety_level: safe
+    models:
+      live: []
+      legacy: []
+      deprecated: []
+
+  Mistral AI:
+    safety_level: safe
+    models:
+      live: []
+      legacy: []
+      deprecated: []
+
+  DeepSeek:
+    safety_level: worrying
+    models:
+      live: []
+      legacy: []
+      deprecated: []
+
+  Zhipu AI:
+    safety_level: dangerous
+    models:
+      live: []
+      legacy: []
+      deprecated: []

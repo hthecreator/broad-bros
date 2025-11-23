@@ -162,14 +162,16 @@ def scan(
         )
     )
 
-    # Save results to timestamped JSON file
-    output_path = save_findings_to_file(findings, output_dir=output_dir)
+    # Save results to timestamped JSON and Markdown files
+    output_paths = save_findings_to_file(findings, output_dir=output_dir)
 
     # Log summary
     summary = findings.summary
     logger.info("Scan complete!")
     logger.info("Summary: %s errors, %s warnings, %s info", summary["error"], summary["warning"], summary["info"])
-    logger.info("Results saved to: %s", output_path)
+    logger.info("Results saved to:")
+    logger.info("  JSON: %s", output_paths["json"])
+    logger.info("  Markdown: %s", output_paths["markdown"])
 
 
 # Add more commands here as needed

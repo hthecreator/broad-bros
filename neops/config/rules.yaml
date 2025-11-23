@@ -1,126 +1,99 @@
-# Rule Class Definitions
-rule_classes:
-  - id: IOH
-    name: Improper Output Handling
-    description: Rules that detect unsafe handling of LLM outputs, including execution, rendering, and injection vulnerabilities.
+# Rules
+# This file contains the actual rule definitions
+# Others can pull/extend this file
 
-  - id: MP
-    name: Model Provider
-    description: Rules that check for usage of model providers based on safety classifications.
-
-  - id: DM
-    name: Deprecated Models
-    description: Rules that detect usage of deprecated or legacy model versions.
-
-# Default Rules
 rules:
-  - rule_id: IOH-001
-    rule_class_id: IOH
+  # OWASP rules
+  - organization: OWASP
+    code: "001"
+    rule_class: IOH
     name: LLM output executed without sanitization
     description: |
       Detects cases where LLM-generated content is passed directly to exec/eval/shell without validation.
       Patterns: exec(llm_output), os.system(llm_output), subprocess.run(llm_output) with no sanitization.
-    category: output_handling
     severity: error
     enabled: true
-    tags:
-      - execution
-      - injection
-      - security
-    source_framework: Neops
-    source_link: null
+    source:
+      name: OWASP
+      link: null
 
-  - rule_id: IOH-002
-    rule_class_id: IOH
+  - organization: OWASP
+    code: "002"
+    rule_class: IOH
     name: LLM output rendered to browser without encoding
     description: |
       Identifies when LLM output is inserted into web/JS/Markdown contexts without proper encoding/escaping.
       Patterns: innerHTML = llm_output, render_template(content=llm_output) with no escape.
-    category: output_handling
     severity: warning
     enabled: true
-    tags:
-      - xss
-      - injection
-      - web_security
-    source_framework: Neops
-    source_link: null
+    source:
+      name: OWASP
+      link: null
 
-  - rule_id: IOH-003
-    rule_class_id: IOH
+  - organization: OWASP
+    code: "003"
+    rule_class: IOH
     name: LLM output used in DB/file path without parameterization
     description: |
       Checks when LLM output is used directly to build SQL queries, file paths, or commands without safeguards.
       Patterns: query = f"…{llm_output}…", open(f"/tmp/{llm_output}"), db.execute(llm_output) without parameterization.
-    category: output_handling
     severity: error
     enabled: true
-    tags:
-      - sql_injection
-      - path_traversal
-      - security
-    source_framework: Neops
-    source_link: null
+    source:
+      name: OWASP
+      link: null
 
-  - rule_id: MP-001W
-    rule_class_id: MP
+  # NEops rules
+  - organization: NEops
+    code: "001"
+    rule_class: MP
     name: Model provider is listed as Worrying
     description: |
       Checks if the code or configuration uses a model provider flagged as Worrying in the provider list.
       Model provider invocation (e.g., model_provider = "DeepSeek") and that provider is in the "Worrying" list.
-    category: model_provider
     severity: warning
     enabled: true
-    tags:
-      - provider
-      - safety
-    source_framework: Neops
-    source_link: null
+    source:
+      name: Neops
+      link: null
 
-  - rule_id: MP-001E
-    rule_class_id: MP
+  - organization: NEops
+    code: "002"
+    rule_class: MP
     name: Model provider is listed as Dangerous
     description: |
       Checks if the code or configuration uses a model provider flagged as Dangerous in the provider list.
-      safe: OpenAI, Anthropic, Google, Meta, Mistral AI
-      worrying: DeepSeek
-      dangerous:  Zhipu AI
-    category: model_provider
+      Model provider invocation and that provider is in the "Dangerous" list.
     severity: error
     enabled: true
-    tags:
-      - provider
-      - safety
-    source_framework: Neops
-    source_link: null
+    source:
+      name: Neops
+      link: null
 
-  - rule_id: DM-001W
-    rule_class_id: DM
+  # OpenAI rules
+  - organization: OpenAI
+    code: "001"
+    rule_class: DM
+    name: Deprecated model used
+    description: |
+      Checks if the model version in use has already been officially deprecated or removed.
+      Model version used appears in provider's deprecated/retired list (e.g., retired model versions per OpenAI).
+    severity: info
+    enabled: true
+    source:
+      name: OpenAI
+      link: https://platform.openai.com/docs/deprecations
+
+  # Anthropic rules
+  - organization: Anthropic
+    code: "001"
+    rule_class: DM
     name: Legacy model used
     description: |
       Checks if the model version in use is listed as legacy (scheduled for future deprecation).
       Model version used found on provider's legacy list with a future retirement date.
-      (e.g., text‑davinci‑003 scheduled for retirement)
-    category: deprecation
-    severity: warning
-    enabled: true
-    tags:
-      - deprecation
-      - maintenance
-    source_framework: Neops
-    source_link: https://platform.openai.com/docs/deprecations
-
-  - rule_id: DM-001E
-    rule_class_id: DM
-    name: Already deprecated model used
-    description: |
-      Checks if the model version in use has already been officially deprecated or removed.
-      Model version used appears in provider's deprecated/retired list (e.g., retired model versions per OpenAI).
-    category: deprecation
     severity: error
     enabled: true
-    tags:
-      - deprecation
-      - maintenance
-    source_framework: Neops
-    source_link: https://platform.openai.com/docs/deprecations
+    source:
+      name: Anthropic
+      link: null

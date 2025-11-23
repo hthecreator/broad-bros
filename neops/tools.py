@@ -4,7 +4,12 @@ import ast
 from pathlib import Path
 from typing import Any
 
+import logfire
 from pydantic import BaseModel, Field
+
+from neops.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ReadFileInput(BaseModel):
@@ -22,22 +27,27 @@ class ReadFileOutput(BaseModel):
 
 
 def read_file(file_path: str) -> ReadFileOutput:
-    """Read the contents of a file.
+    """Read the contents of a file with line numbers.
 
     Args:
         file_path: Path to the file to read
 
     Returns:
-        ReadFileOutput with file contents and line count
+        ReadFileOutput with file contents (with line numbers) and line count
     """
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"File not found: {file_path}")
+    with logfire.span("read_file", file_path=file_path):
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
 
-    content = path.read_text(encoding="utf-8")
-    lines = content.splitlines()
+        content = path.read_text(encoding="utf-8")
+        lines = content.splitlines()
 
-    return ReadFileOutput(content=content, line_count=len(lines), file_path=str(path))
+        # Format content with line numbers for accurate line number tracking
+        numbered_lines = [f"{i}: {line}" for i, line in enumerate(lines, start=1)]
+        numbered_content = "\n".join(numbered_lines)
+
+        return ReadFileOutput(content=numbered_content, line_count=len(lines), file_path=str(path))
 
 
 class ReadFilesInput(BaseModel):
@@ -56,33 +66,39 @@ class ReadFilesOutput(BaseModel):
 
 
 def read_files(file_paths: list[str]) -> ReadFilesOutput:
-    """Read the contents of multiple files at once.
+    """Read the contents of multiple files at once with line numbers.
 
     Args:
         file_paths: List of paths to files to read
 
     Returns:
-        ReadFilesOutput with contents of all files
+        ReadFilesOutput with contents of all files (with line numbers)
     """
-    files = []
-    for file_path in file_paths:
-        path = Path(file_path)
-        if not path.exists():
-            continue  # Skip non-existent files
-        try:
-            content = path.read_text(encoding="utf-8")
-            lines = content.splitlines()
-            files.append(
-                {
-                    "file_path": str(path),
-                    "content": content,
-                    "line_count": len(lines),
-                }
-            )
-        except Exception:
-            continue  # Skip files that can't be read
+    with logfire.span("read_files", file_paths=file_paths, file_count=len(file_paths)):
+        files = []
+        for file_path in file_paths:
+            path = Path(file_path)
+            if not path.exists():
+                continue  # Skip non-existent files
+            try:
+                content = path.read_text(encoding="utf-8")
+                lines = content.splitlines()
 
-    return ReadFilesOutput(files=files)
+                # Format content with line numbers for accurate line number tracking
+                numbered_lines = [f"{i}: {line}" for i, line in enumerate(lines, start=1)]
+                numbered_content = "\n".join(numbered_lines)
+
+                files.append(
+                    {
+                        "file_path": str(path),
+                        "content": numbered_content,
+                        "line_count": len(lines),
+                    }
+                )
+            except Exception:
+                continue  # Skip files that can't be read
+
+        return ReadFilesOutput(files=files)
 
 
 class ParseASTInput(BaseModel):
@@ -112,44 +128,45 @@ def parse_ast(code: str, file_path: str = "<unknown>") -> ParseASTOutput:
     Returns:
         ParseASTOutput with AST information
     """
-    try:
-        tree = ast.parse(code)
-        functions = []
-        classes = []
-        imports = []
+    with logfire.span("parse_ast", file_path=file_path, code_length=len(code)):
+        try:
+            tree = ast.parse(code)
+            functions = []
+            classes = []
+            imports = []
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                functions.append(node.name)
-            elif isinstance(node, ast.AsyncFunctionDef):
-                functions.append(node.name)
-            elif isinstance(node, ast.ClassDef):
-                classes.append(node.name)
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        imports.append(alias.name)
-                else:
-                    module = node.module or ""
-                    for alias in node.names:
-                        imports.append(f"{module}.{alias.name}")
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    functions.append(node.name)
+                elif isinstance(node, ast.AsyncFunctionDef):
+                    functions.append(node.name)
+                elif isinstance(node, ast.ClassDef):
+                    classes.append(node.name)
+                elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            imports.append(alias.name)
+                    else:
+                        module = node.module or ""
+                        for alias in node.names:
+                            imports.append(f"{module}.{alias.name}")
 
-        ast_dump = ast.dump(tree, indent=2)
-        return ParseASTOutput(
-            file_path=file_path,
-            ast_dump=ast_dump,
-            functions=list(set(functions)),
-            classes=list(set(classes)),
-            imports=list(set(imports)),
-        )
-    except SyntaxError as e:
-        return ParseASTOutput(
-            file_path=file_path,
-            ast_dump=f"SyntaxError: {e}",
-            functions=[],
-            classes=[],
-            imports=[],
-        )
+            ast_dump = ast.dump(tree, indent=2)
+            return ParseASTOutput(
+                file_path=file_path,
+                ast_dump=ast_dump,
+                functions=list(set(functions)),
+                classes=list(set(classes)),
+                imports=list(set(imports)),
+            )
+        except SyntaxError as e:
+            return ParseASTOutput(
+                file_path=file_path,
+                ast_dump=f"SyntaxError: {e}",
+                functions=[],
+                classes=[],
+                imports=[],
+            )
 
 
 class ParseASTsInput(BaseModel):
@@ -179,56 +196,58 @@ def parse_asts(files: list[dict[str, str]]) -> ParseASTsOutput:
     Returns:
         ParseASTsOutput with AST information for all files
     """
-    asts = []
-    for file_info in files:
-        file_path = file_info.get("file_path", "")
-        content = file_info.get("content", "")
-        try:
-            tree = ast.parse(content)
-            functions = []
-            classes = []
-            imports = []
+    file_paths = [f.get("file_path", "<unknown>") for f in files]
+    with logfire.span("parse_asts", file_paths=file_paths, file_count=len(files)):
+        asts = []
+        for file_info in files:
+            file_path = file_info.get("file_path", "")
+            content = file_info.get("content", "")
+            try:
+                tree = ast.parse(content)
+                functions = []
+                classes = []
+                imports = []
 
-            for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
-                    functions.append(node.name)
-                elif isinstance(node, ast.AsyncFunctionDef):
-                    functions.append(node.name)
-                elif isinstance(node, ast.ClassDef):
-                    classes.append(node.name)
-                elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                    if isinstance(node, ast.Import):
-                        for alias in node.names:
-                            imports.append(alias.name)
-                    else:
-                        module = node.module or ""
-                        for alias in node.names:
-                            imports.append(f"{module}.{alias.name}")
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.FunctionDef):
+                        functions.append(node.name)
+                    elif isinstance(node, ast.AsyncFunctionDef):
+                        functions.append(node.name)
+                    elif isinstance(node, ast.ClassDef):
+                        classes.append(node.name)
+                    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                        if isinstance(node, ast.Import):
+                            for alias in node.names:
+                                imports.append(alias.name)
+                        else:
+                            module = node.module or ""
+                            for alias in node.names:
+                                imports.append(f"{module}.{alias.name}")
 
-            ast_dump = ast.dump(tree, indent=2)
-            asts.append(
-                {
-                    "file_path": file_path,
-                    "ast_dump": ast_dump,
-                    "functions": list(set(functions)),
-                    "classes": list(set(classes)),
-                    "imports": list(set(imports)),
-                }
-            )
-        except SyntaxError as e:
-            asts.append(
-                {
-                    "file_path": file_path,
-                    "ast_dump": f"SyntaxError: {e}",
-                    "functions": [],
-                    "classes": [],
-                    "imports": [],
-                }
-            )
-        except Exception:
-            continue  # Skip files that can't be parsed
+                ast_dump = ast.dump(tree, indent=2)
+                asts.append(
+                    {
+                        "file_path": file_path,
+                        "ast_dump": ast_dump,
+                        "functions": list(set(functions)),
+                        "classes": list(set(classes)),
+                        "imports": list(set(imports)),
+                    }
+                )
+            except SyntaxError as e:
+                asts.append(
+                    {
+                        "file_path": file_path,
+                        "ast_dump": f"SyntaxError: {e}",
+                        "functions": [],
+                        "classes": [],
+                        "imports": [],
+                    }
+                )
+            except Exception:
+                continue  # Skip files that can't be parsed
 
-    return ParseASTsOutput(asts=asts)
+        return ParseASTsOutput(asts=asts)
 
 
 class SearchPatternInput(BaseModel):
@@ -257,20 +276,20 @@ def search_pattern(code: str, pattern: str, file_path: str = "<unknown>") -> Sea
     Returns:
         SearchPatternOutput with matches and their locations
     """
-    lines = code.splitlines()
-    matches = []
+    with logfire.span("search_pattern", file_path=file_path, pattern=pattern, code_length=len(code)):
+        lines = code.splitlines()
+        matches = []
 
-    for line_num, line in enumerate(lines, start=1):
-        if pattern.lower() in line.lower():
-            matches.append(
-                {
-                    "line": line_num,
-                    "content": line.strip(),
-                    "column": line.lower().find(pattern.lower()) + 1 if pattern.lower() in line.lower() else None,
-                }
-            )
+        for line_num, line in enumerate(lines, start=1):
+            if pattern.lower() in line.lower():
+                matches.append(
+                    {
+                        "line": line_num,
+                        "content": line.strip(),
+                    }
+                )
 
-    return SearchPatternOutput(file_path=file_path, matches=matches)
+        return SearchPatternOutput(file_path=file_path, matches=matches)
 
 
 class SearchPatternsInput(BaseModel):
@@ -302,24 +321,25 @@ def search_patterns(files: list[dict[str, str]], pattern: str) -> SearchPatterns
     Returns:
         SearchPatternsOutput with matches from all files
     """
-    results = []
-    for file_info in files:
-        file_path = file_info.get("file_path", "")
-        content = file_info.get("content", "")
-        lines = content.splitlines()
-        matches = []
+    file_paths = [f.get("file_path", "<unknown>") for f in files]
+    with logfire.span("search_patterns", pattern=pattern, file_paths=file_paths, file_count=len(files)):
+        results = []
+        for file_info in files:
+            file_path = file_info.get("file_path", "")
+            content = file_info.get("content", "")
+            lines = content.splitlines()
+            matches = []
 
-        for line_num, line in enumerate(lines, start=1):
-            if pattern.lower() in line.lower():
-                matches.append(
-                    {
-                        "line": line_num,
-                        "content": line.strip(),
-                        "column": line.lower().find(pattern.lower()) + 1 if pattern.lower() in line.lower() else None,
-                    }
-                )
+            for line_num, line in enumerate(lines, start=1):
+                if pattern.lower() in line.lower():
+                    matches.append(
+                        {
+                            "line": line_num,
+                            "content": line.strip(),
+                        }
+                    )
 
-        if matches:  # Only include files with matches
-            results.append({"file_path": file_path, "matches": matches})
+            if matches:  # Only include files with matches
+                results.append({"file_path": file_path, "matches": matches})
 
-    return SearchPatternsOutput(results=results)
+        return SearchPatternsOutput(results=results)

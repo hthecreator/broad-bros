@@ -27,10 +27,10 @@ class Finding(BaseModel):
     """A finding from rule checking."""
 
     rule_id: str = Field(..., description="ID of the rule that triggered this finding")
+    rule_name: str = Field(..., description="Name of the rule that triggered this finding")
     severity: Severity = Field(..., description="Severity of the finding")
     file: Path = Field(..., description="Path to the file where the finding was detected")
     line: int = Field(..., description="Line number where the finding was detected")
-    column: Optional[int] = Field(None, description="Column number (if applicable)")
     message: str = Field(..., description="Human-readable message describing the finding")
     reasoning: str = Field(..., description="AI-generated reasoning for why this rule applies")
     remediation: Optional[str] = Field(None, description="Suggested remediation steps")

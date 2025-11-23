@@ -4,34 +4,35 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import logfire
 from pydantic_ai import Agent
 
-from neops.agent import AgentAnalysisResult, NeopsAgent, RuleCheckResult
-from neops.cli_utils import aggregate_findings, apply_rule_overrides, create_rule_configs, create_summary
+from neops.agent import AgentAnalysisResult, NeopsAgent
+from neops.cli_utils import aggregate_findings, create_rule_configs, create_summary
+from neops.config.loader import load_provider_config_with_overrides
 from neops.models import Findings
 from neops.prompts import SYSTEM_PROMPT
+from neops.providers.models import ProviderConfig
+from neops.report import save_findings_as_markdown
 from neops.rules import get_default_rules
-from neops.rules.models import Rule
-from neops.settings import NeopsSettings, settings
+from neops.settings import settings
 from neops.tools import parse_ast, parse_asts, read_file, read_files, search_pattern, search_patterns
 
 
 async def scan_codebase(
     code_paths: list[Path],
     project_root: Optional[Path] = None,
-    rule_overrides: Optional[dict[str, dict[str, Any]]] = None,
-    neops_settings: Optional[NeopsSettings] = None,
 ) -> Findings:
     """Scan a codebase with all rules.
+
+    Rules are loaded from YAML configuration with pyproject.toml overrides applied automatically.
+    To override rules, add a [tool.neops.rules] section to your pyproject.toml.
 
     Args:
         code_paths: List of paths to scan
         project_root: Root directory of the project for pyproject.toml lookup
-        rule_overrides: Optional dictionary of rule overrides (e.g., {"IOH-001": {"severity": "warning"}})
-        neops_settings: Optional settings instance (defaults to global settings)
 
     Returns:
         Findings model with all findings
@@ -42,26 +43,27 @@ async def scan_codebase(
     )
     logfire.instrument_pydantic_ai()  # Instrument pydantic-ai for automatic tracking
 
-    # Use provided settings or global settings
-    scan_settings = neops_settings if neops_settings is not None else settings
-
     # Ensure API key is in environment for pydantic_ai Agent
-    if scan_settings.openai_api_key:
-        os.environ["OPENAI_API_KEY"] = scan_settings.openai_api_key
+    if settings.openai_api_key:
+        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
 
-    # Load rules
+    # Load rules (pyproject.toml overrides are automatically applied via get_default_rules)
     rules = get_default_rules(project_root)
-
-    # Apply simple overrides
-    if rule_overrides:
-        rules = apply_rule_overrides(rules, rule_overrides)
 
     # Create rule configs
     rule_configs = create_rule_configs(rules)
 
+    # Load provider configuration (needed for MP and DM rules)
+    provider_config: ProviderConfig | None = None
+    try:
+        provider_config = load_provider_config_with_overrides(project_root)
+    except Exception:
+        # If provider config can't be loaded, continue without it
+        provider_config = None
+
     # Create Pydantic AI agent with batch tools
     pydantic_agent = Agent(
-        scan_settings.agent_model,
+        settings.agent_model,
         output_type=AgentAnalysisResult,
         system_prompt=SYSTEM_PROMPT,
         tools=[
@@ -77,20 +79,17 @@ async def scan_codebase(
     # Create NeopsAgent wrapper
     agent = NeopsAgent(pydantic_agent)
 
-    # Run all rules on all code paths in a single API call
-    # The agent will decide which files to open and how to analyze them
-    all_results: list[tuple[Rule, RuleCheckResult]] = []
-
     # Filter to only existing paths
     existing_paths = [p for p in code_paths if p.exists()]
 
     if existing_paths:
-        # Check all enabled rules against all files in one API call
+        # Run agent per organization (groups rules by organization and runs separately)
         # Logfire automatically tracks everything via instrument_pydantic_ai()
-        all_results = await agent.check_multiple_rules(
+        all_results = await agent.check_rules_by_organization(
             rules=rules,
             rule_configs=rule_configs,
             code_paths=existing_paths,
+            provider_config=provider_config,
         )
     else:
         all_results = []
@@ -102,10 +101,21 @@ async def scan_codebase(
     summary = create_summary(findings)
 
     # Create config info
+    # Load pyproject.toml to get rule overrides that were applied
+    rule_overrides_applied = {}
+    try:
+        from neops.config.loader import load_pyproject_toml
+
+        overrides = load_pyproject_toml(project_root)
+        rule_overrides_applied = overrides.get("rules", {})
+    except Exception:
+        # If we can't load pyproject.toml, that's okay - rules were still loaded
+        pass
+
     config = {
         "rules_enabled": [rule.rule_id for rule in rules if rule.enabled],
         "rules_disabled": [rule.rule_id for rule in rules if not rule.enabled],
-        "rule_overrides": rule_overrides or {},
+        "rule_overrides": rule_overrides_applied,
     }
 
     # Create Findings model (Pydantic model for results)
@@ -118,15 +128,15 @@ async def scan_codebase(
     return findings_model
 
 
-def save_findings_to_file(findings: Findings, output_dir: Path | None = None) -> Path:
-    """Save findings to a timestamped JSON file.
+def save_findings_to_file(findings: Findings, output_dir: Path | None = None) -> dict[str, Path]:
+    """Save findings to timestamped JSON and Markdown files.
 
     Args:
         findings: The Findings model to save
-        output_dir: Directory to save the file (defaults to current directory)
+        output_dir: Directory to save the files (defaults to current directory)
 
     Returns:
-        Path to the saved file
+        Dictionary with keys 'json' and 'markdown' and their file paths
     """
     if output_dir is None:
         output_dir = Path.cwd()
@@ -136,14 +146,17 @@ def save_findings_to_file(findings: Findings, output_dir: Path | None = None) ->
 
     # Generate timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"neops_scan_results_{timestamp}.json"
-    file_path = output_dir / filename
 
     # Save as JSON
-    with open(file_path, "w", encoding="utf-8") as f:
+    json_filename = f"neops_scan_results_{timestamp}.json"
+    json_path = output_dir / json_filename
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump(findings.model_dump(mode="json"), f, indent=2, default=str)
 
-    return file_path
+    # Save as Markdown
+    md_path = save_findings_as_markdown(findings, output_dir)
+
+    return {"json": json_path, "markdown": md_path}
 
 
 def format_report_as_json(findings: Findings) -> str:

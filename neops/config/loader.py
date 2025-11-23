@@ -73,45 +73,60 @@ def load_pyproject_toml(project_root: Path | None = None) -> dict[str, Any]:
 
 
 def load_rules(project_root: Path | None = None) -> list[Rule]:
-    """Load rules from the rules.yaml configuration file.
+    """Load rules from the rules.yaml and rule_configuration.yaml files.
 
     Args:
         project_root: Root directory of the project for pyproject.toml lookup
 
     Returns:
-        List of Rule objects loaded from the YAML file
+        List of Rule objects loaded from the YAML files
     """
+    from neops.rules.models import RuleSource
+
     config_dir = get_config_dir()
-    rules_file = config_dir / "rules.yaml"
-    data = load_yaml(rules_file)
+
+    # Load rule configuration (rule classes and organizations)
+    config_file = config_dir / "rule_configuration.yaml"
+    config_data = load_yaml(config_file)
 
     # Load rule classes
     rule_classes_map: dict[str, RuleClass] = {}
-    for rc_data in data.get("rule_classes", []):
+    for rc_data in config_data.get("rule_classes", []):
         rule_class = RuleClass(**rc_data)
         rule_classes_map[rule_class.id] = rule_class
 
     # Load rules
+    rules_file = config_dir / "rules.yaml"
+    rules_data = load_yaml(rules_file)
+
     rules = []
-    for rule_data in data.get("rules", []):
-        rule_class_id = rule_data.pop("rule_class_id")
+    for rule_data in rules_data.get("rules", []):
+        # Get rule_class from rule_data (it's a string ID)
+        rule_class_id = rule_data.pop("rule_class")
         rule_class = rule_classes_map.get(rule_class_id)
         if not rule_class:
-            raise ValueError(f"Rule class '{rule_class_id}' not found for rule {rule_data.get('rule_id')}")
+            org = rule_data.get("organization")
+            code = rule_data.get("code")
+            raise ValueError(f"Rule class '{rule_class_id}' not found for rule {org}-{code}")
 
         # Convert severity string to enum
         severity_str = rule_data.pop("severity", "error")
         severity = Severity(severity_str.lower())
 
-        # Handle null source_link
-        source_link = rule_data.pop("source_link")
-        if source_link == "null" or source_link is None:
-            source_link = None
+        # Handle source object
+        source_data = rule_data.pop("source", {})
+        if isinstance(source_data, dict):
+            source = RuleSource(
+                name=source_data.get("name", ""),
+                link=source_data.get("link") if source_data.get("link") not in ["null", None] else None,
+            )
+        else:
+            source = RuleSource(name="", link=None)
 
         rule = Rule(
             rule_class=rule_class,
             severity=severity,
-            source_link=source_link,
+            source=source,
             **rule_data,
         )
         rules.append(rule)
@@ -152,7 +167,7 @@ def load_rules_with_overrides(project_root: Path | None = None) -> list[Rule]:
 
 
 def load_provider_config(project_root: Path | None = None):
-    """Load provider configuration from the providers.yaml file.
+    """Load unified provider configuration from the providers.yaml file.
 
     Args:
         project_root: Root directory of the project for pyproject.toml lookup
@@ -160,17 +175,78 @@ def load_provider_config(project_root: Path | None = None):
     Returns:
         ProviderConfig object loaded from the YAML file
     """
-    from neops.providers.models import ProviderConfig
+    from datetime import datetime
+
+    from neops.providers.models import DeprecatedModel, ProviderConfig, ProviderInfo, ProviderModelConfig
 
     config_dir = get_config_dir()
     providers_file = config_dir / "providers.yaml"
     data = load_yaml(providers_file)
 
-    return ProviderConfig(
-        dangerous=data.get("dangerous", []),
-        safe=data.get("safe", []),
-        worrying=data.get("worrying", []),
-    )
+    providers_dict: dict[str, ProviderInfo] = {}
+
+    for provider_name, provider_data in data.get("providers", {}).items():
+        # Parse models
+        models_data = provider_data.get("models", {})
+
+        # Parse live models (list of strings)
+        live = models_data.get("live", [])
+        if not isinstance(live, list):
+            live = []
+
+        # Parse deprecated models
+        deprecated = []
+        deprecated_list = models_data.get("deprecated", [])
+        if not isinstance(deprecated_list, list):
+            deprecated_list = []
+        for model_data in deprecated_list:
+            # Convert date strings to date objects
+            dep_date = model_data.get("deprecation_date")
+            ret_date = model_data.get("retirement_date")
+            if isinstance(dep_date, str):
+                model_data["deprecation_date"] = datetime.strptime(dep_date, "%Y-%m-%d").date()
+            if isinstance(ret_date, str):
+                model_data["retirement_date"] = datetime.strptime(ret_date, "%Y-%m-%d").date()
+
+            # Handle null values
+            for key in ["replacement", "notes"]:
+                if model_data.get(key) in ["null", None]:
+                    model_data[key] = None
+
+            deprecated.append(DeprecatedModel(**model_data))
+
+        # Parse legacy models
+        legacy = []
+        legacy_list = models_data.get("legacy", [])
+        if not isinstance(legacy_list, list):
+            legacy_list = []
+        for model_data in legacy_list:
+            # Convert date strings to date objects
+            dep_date = model_data.get("deprecation_date")
+            ret_date = model_data.get("retirement_date")
+            if isinstance(dep_date, str):
+                model_data["deprecation_date"] = datetime.strptime(dep_date, "%Y-%m-%d").date()
+            if isinstance(ret_date, str):
+                model_data["retirement_date"] = datetime.strptime(ret_date, "%Y-%m-%d").date()
+
+            # Handle null values
+            for key in ["replacement", "notes"]:
+                if model_data.get(key) in ["null", None]:
+                    model_data[key] = None
+
+            legacy.append(DeprecatedModel(**model_data))
+
+        providers_dict[provider_name] = ProviderInfo(
+            provider=provider_name,
+            safety_level=provider_data.get("safety_level", "safe"),
+            models=ProviderModelConfig(
+                live=live,
+                deprecated=deprecated,
+                legacy=legacy,
+            ),
+        )
+
+    return ProviderConfig(providers=providers_dict)
 
 
 def load_provider_config_with_overrides(project_root: Path | None = None):
@@ -182,100 +258,103 @@ def load_provider_config_with_overrides(project_root: Path | None = None):
     Returns:
         ProviderConfig object with overrides applied
     """
+    from datetime import datetime
+
+    from neops.providers.models import DeprecatedModel
+
     config = load_provider_config(project_root)
     overrides = load_pyproject_toml(project_root)
 
     # Apply provider overrides from pyproject.toml
     provider_overrides = overrides.get("providers", {})
     if provider_overrides:
-        if "dangerous" in provider_overrides:
-            config.dangerous = provider_overrides["dangerous"]
-        if "safe" in provider_overrides:
-            config.safe = provider_overrides["safe"]
-        if "worrying" in provider_overrides:
-            config.worrying = provider_overrides["worrying"]
+        for provider_name, provider_override in provider_overrides.items():
+            if provider_name in config.providers:
+                provider_info = config.providers[provider_name]
+
+                # Override safety level
+                if "safety_level" in provider_override:
+                    provider_info.safety_level = provider_override["safety_level"]
+
+                # Override models
+                if "models" in provider_override:
+                    models_override = provider_override["models"]
+
+                    # Override live models
+                    if "live" in models_override:
+                        provider_info.models.live = models_override["live"]
+
+                    # Override deprecated models
+                    if "deprecated" in models_override:
+                        deprecated = []
+                        for model_data in models_override["deprecated"]:
+                            # Convert date strings if needed
+                            if isinstance(model_data.get("deprecation_date"), str):
+                                model_data["deprecation_date"] = datetime.strptime(
+                                    model_data["deprecation_date"], "%Y-%m-%d"
+                                ).date()
+                            if isinstance(model_data.get("retirement_date"), str):
+                                model_data["retirement_date"] = datetime.strptime(
+                                    model_data["retirement_date"], "%Y-%m-%d"
+                                ).date()
+                            # Handle null values
+                            for key in ["replacement", "notes"]:
+                                if model_data.get(key) in ["null", None]:
+                                    model_data[key] = None
+                            deprecated.append(DeprecatedModel(**model_data))
+                        provider_info.models.deprecated = deprecated
+
+                    # Override legacy models
+                    if "legacy" in models_override:
+                        legacy = []
+                        for model_data in models_override["legacy"]:
+                            # Convert date strings if needed
+                            if isinstance(model_data.get("deprecation_date"), str):
+                                model_data["deprecation_date"] = datetime.strptime(
+                                    model_data["deprecation_date"], "%Y-%m-%d"
+                                ).date()
+                            if isinstance(model_data.get("retirement_date"), str):
+                                model_data["retirement_date"] = datetime.strptime(
+                                    model_data["retirement_date"], "%Y-%m-%d"
+                                ).date()
+                            # Handle null values
+                            for key in ["replacement", "notes"]:
+                                if model_data.get(key) in ["null", None]:
+                                    model_data[key] = None
+                            legacy.append(DeprecatedModel(**model_data))
+                        provider_info.models.legacy = legacy
 
     return config
 
 
 def load_deprecation_config(project_root: Path | None = None):
-    """Load deprecation configuration from the deprecations.yaml file.
+    """Load deprecation configuration (deprecated - use load_provider_config instead).
+
+    This function is kept for backward compatibility but now uses the unified provider config.
 
     Args:
         project_root: Root directory of the project for pyproject.toml lookup
 
     Returns:
-        DeprecationConfig object loaded from the YAML file
+        DeprecationConfig object (converted from ProviderConfig)
     """
-    from neops.deprecations.models import (
-        DeprecatedModel,
-        DeprecationConfig,
-        ProviderDeprecationConfig,
-    )
+    from neops.deprecations.models import DeprecationConfig, ProviderDeprecationConfig
 
-    config_dir = get_config_dir()
-    deprecations_file = config_dir / "deprecations.yaml"
-    data = load_yaml(deprecations_file)
+    # Use unified provider config
+    provider_config = load_provider_config(project_root)
 
+    # Convert to old DeprecationConfig format for backward compatibility
     providers_dict: dict[str, ProviderDeprecationConfig] = {}
-
-    for provider_name, provider_data in data.get("providers", {}).items():
-        # Parse deprecated models
-        deprecated = []
-        deprecated_list = provider_data.get("deprecated")
-        if deprecated_list is None or not isinstance(deprecated_list, list):
-            deprecated_list = []
-        for model_data in deprecated_list:
-            # Convert date strings to date objects
-            dep_date = model_data.get("deprecation_date")
-            ret_date = model_data.get("retirement_date")
-            if isinstance(dep_date, str):
-                from datetime import datetime
-
-                model_data["deprecation_date"] = datetime.strptime(dep_date, "%Y-%m-%d").date()
-            if isinstance(ret_date, str):
-                from datetime import datetime
-
-                model_data["retirement_date"] = datetime.strptime(ret_date, "%Y-%m-%d").date()
-
-            # Handle null values
-            for key in ["replacement", "notes"]:
-                if model_data.get(key) == "null" or model_data.get(key) is None:
-                    model_data[key] = None
-
-            deprecated.append(DeprecatedModel(**model_data))
-
-        # Parse legacy models
-        legacy = []
-        legacy_list = provider_data.get("legacy")
-        if legacy_list is None:
-            legacy_list = []
-        elif not isinstance(legacy_list, list):
-            legacy_list = []
-        for model_data in legacy_list:
-            # Convert date strings to date objects
-            dep_date = model_data.get("deprecation_date")
-            ret_date = model_data.get("retirement_date")
-            if isinstance(dep_date, str):
-                from datetime import datetime
-
-                model_data["deprecation_date"] = datetime.strptime(dep_date, "%Y-%m-%d").date()
-            if isinstance(ret_date, str):
-                from datetime import datetime
-
-                model_data["retirement_date"] = datetime.strptime(ret_date, "%Y-%m-%d").date()
-
-            # Handle null values
-            for key in ["replacement", "notes"]:
-                if model_data.get(key) == "null" or model_data.get(key) is None:
-                    model_data[key] = None
-
-            legacy.append(DeprecatedModel(**model_data))
+    for provider_name, provider_info in provider_config.providers.items():
+        # Convert DeprecatedModel instances to dicts so Pydantic can recreate them
+        # as the correct DeprecatedModel type (from neops.deprecations.models)
+        deprecated_dicts = [model.model_dump() for model in provider_info.models.deprecated]
+        legacy_dicts = [model.model_dump() for model in provider_info.models.legacy]
 
         providers_dict[provider_name] = ProviderDeprecationConfig(
-            provider=provider_data.get("provider", provider_name),
-            deprecated=deprecated,
-            legacy=legacy,
+            provider=provider_name,
+            deprecated=deprecated_dicts,
+            legacy=legacy_dicts,
         )
 
     return DeprecationConfig(providers=providers_dict)
@@ -284,63 +363,31 @@ def load_deprecation_config(project_root: Path | None = None):
 def load_deprecation_config_with_overrides(project_root: Path | None = None):
     """Load deprecation configuration with pyproject.toml overrides applied.
 
+    This function is kept for backward compatibility but now uses the unified provider config.
+
     Args:
         project_root: Root directory of the project for pyproject.toml lookup
 
     Returns:
-        DeprecationConfig object with overrides applied
+        DeprecationConfig object (converted from ProviderConfig)
     """
-    from neops.deprecations.models import DeprecatedModel
+    from neops.deprecations.models import DeprecationConfig, ProviderDeprecationConfig
 
-    config = load_deprecation_config(project_root)
-    overrides = load_pyproject_toml(project_root)
+    # Use unified provider config with overrides
+    provider_config = load_provider_config_with_overrides(project_root)
 
-    # Apply deprecation overrides from pyproject.toml
-    deprecation_overrides = overrides.get("deprecations", {})
-    if deprecation_overrides:
-        # Merge provider-specific deprecation overrides
-        for provider_name, provider_overrides in deprecation_overrides.items():
-            if provider_name in config.providers:
-                provider_config = config.providers[provider_name]
-                # Update deprecated models
-                if "deprecated" in provider_overrides:
-                    # Parse override models
-                    deprecated = []
-                    for model_data in provider_overrides["deprecated"]:
-                        # Convert date strings if needed
-                        if isinstance(model_data.get("deprecation_date"), str):
-                            from datetime import datetime
+    # Convert to old DeprecationConfig format for backward compatibility
+    providers_dict: dict[str, ProviderDeprecationConfig] = {}
+    for provider_name, provider_info in provider_config.providers.items():
+        # Convert DeprecatedModel instances to dicts so Pydantic can recreate them
+        # as the correct DeprecatedModel type (from neops.deprecations.models)
+        deprecated_dicts = [model.model_dump() for model in provider_info.models.deprecated]
+        legacy_dicts = [model.model_dump() for model in provider_info.models.legacy]
 
-                            model_data["deprecation_date"] = datetime.strptime(
-                                model_data["deprecation_date"], "%Y-%m-%d"
-                            ).date()
-                        if isinstance(model_data.get("retirement_date"), str):
-                            from datetime import datetime
+        providers_dict[provider_name] = ProviderDeprecationConfig(
+            provider=provider_name,
+            deprecated=deprecated_dicts,
+            legacy=legacy_dicts,
+        )
 
-                            model_data["retirement_date"] = datetime.strptime(
-                                model_data["retirement_date"], "%Y-%m-%d"
-                            ).date()
-                        deprecated.append(DeprecatedModel(**model_data))
-                    provider_config.deprecated = deprecated
-
-                # Update legacy models
-                if "legacy" in provider_overrides:
-                    legacy = []
-                    for model_data in provider_overrides["legacy"]:
-                        # Convert date strings if needed
-                        if isinstance(model_data.get("deprecation_date"), str):
-                            from datetime import datetime
-
-                            model_data["deprecation_date"] = datetime.strptime(
-                                model_data["deprecation_date"], "%Y-%m-%d"
-                            ).date()
-                        if isinstance(model_data.get("retirement_date"), str):
-                            from datetime import datetime
-
-                            model_data["retirement_date"] = datetime.strptime(
-                                model_data["retirement_date"], "%Y-%m-%d"
-                            ).date()
-                        legacy.append(DeprecatedModel(**model_data))
-                    provider_config.legacy = legacy
-
-    return config
+    return DeprecationConfig(providers=providers_dict)

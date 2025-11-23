@@ -1,0 +1,39 @@
+# Rule Configuration
+# This file contains metadata about rule classes and organizations
+# Rules themselves are in rules.yaml
+
+# Predefined rule classes (categories) - these are the only valid categories
+rule_classes:
+  - id: IOH
+    name: Improper Output Handling
+    description: Rules that detect unsafe handling of LLM outputs, including execution, rendering, and injection vulnerabilities.
+
+  - id: MP
+    name: Model Provider
+    description: Rules that check for usage of model providers based on safety classifications.
+
+  - id: DM
+    name: Deprecated Models
+    description: Rules that detect usage of deprecated or legacy model versions.
+
+# Organizations/Guidelines that provide rules
+organizations:
+  - id: OWASP
+    name: OWASP
+    description: OWASP AI Security Guidelines
+    website: https://owasp.org/
+
+  - id: NEOps
+    name: Neops
+    description: Neops AI Safety Rules
+    website: null
+
+  - id: OpenAI
+    name: OpenAI
+    description: OpenAI Safety Guidelines
+    website: https://openai.com/
+
+  - id: Anthropic
+    name: Anthropic
+    description: Anthropic Safety Guidelines
+    website: https://anthropic.com/

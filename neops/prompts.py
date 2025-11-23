@@ -37,7 +37,15 @@ Remember: ALL files must be checked against ALL rules. Choose the most efficient
 
 
 def build_rule_check_prompt(
-    rule_id: str, rule_name: str, rule_description: str, category: str, severity: str, code_path: str
+    rule_id: str,
+    rule_name: str,
+    rule_description: str,
+    rule_class: str,
+    severity: str,
+    code_path: str,
+    organization: str = "",
+    source_name: str = "",
+    source_link: str | None = None,
 ) -> str:
     """Build a prompt for checking a rule against code.
 
@@ -45,20 +53,31 @@ def build_rule_check_prompt(
         rule_id: The rule identifier
         rule_name: The rule name
         rule_description: The rule description
-        category: The rule category
+        rule_class: The rule class (category)
         severity: The rule severity
         code_path: Path to the code file to analyze
+        organization: The organization that defined this rule
+        source_name: Name of the source
+        source_link: Link to the source
 
     Returns:
         The formatted prompt string
     """
+    source_info = f"Source: {source_name}"
+    if source_link:
+        source_info += f" ({source_link})"
+
+    org_info = f"Organization: {organization}" if organization else ""
+
     return f"""Analyze the code at {code_path} to determine if the following AI safety rule applies:
 
 Rule ID: {rule_id}
+{org_info}
 Name: {rule_name}
 Description: {rule_description}
-Category: {category}
+Rule Class: {rule_class}
 Severity: {severity}
+{source_info}
 
 Use the available tools to:
 1. Read and examine the code file
@@ -75,33 +94,95 @@ Provide your analysis with:
 Format your response as a structured analysis."""
 
 
-def build_multi_rule_check_prompt(rules: list, rule_configs: list, code_paths: list[str]) -> str:
+def build_multi_rule_check_prompt(
+    rules: list,
+    rule_configs: list,
+    code_paths: list[str],
+    provider_config=None,
+) -> str:
     """Build a prompt for checking multiple rules against multiple code files in one pass.
 
     Args:
         rules: List of Rule objects to check
         rule_configs: List of RuleConfig objects corresponding to the rules
         code_paths: List of paths to code files to analyze
+        provider_config: Optional ProviderConfig for MP and DM rules
 
     Returns:
         The formatted prompt string
     """
     rules_text = []
     for rule, rule_config in zip(rules, rule_configs, strict=True):
-        rules_text.append(
-            f"""
+        rule_text = f"""
 Rule ID: {rule.rule_id}
+Organization: {rule.organization}
 Name: {rule.name}
 Description: {rule.description}
-Category: {rule.category}
-Severity: {rule_config.severity.value}
 Rule Class: {rule.rule_class.name} ({rule.rule_class.id})
-"""
-        )
+Severity: {rule_config.severity.value}
+Source: {rule.source.name}"""
+        if rule.source.link:
+            rule_text += f" ({rule.source.link})"
+        rules_text.append(rule_text)
 
     rules_section = "\n".join(rules_text)
 
     paths_section = "\n".join(f"- {path}" for path in code_paths)
+
+    # Add provider/deprecation context for MP and DM rules
+    context_section = ""
+    if provider_config:
+        # Extract provider information for MP rules
+        safe_providers = provider_config.get_safe_providers()
+        worrying_providers = provider_config.get_worrying_providers()
+        dangerous_providers = provider_config.get_dangerous_providers()
+
+        # Check if we have MP or DM rules
+        has_mp_rules = any(rule.rule_class.id == "MP" for rule in rules)
+        has_dm_rules = any(rule.rule_class.id == "DM" for rule in rules)
+
+        if has_mp_rules or has_dm_rules:
+            context_section = "\n\nProvider and Model Information:\n"
+            context_section += (
+                "This information is relevant for Model Provider (MP) and Deprecated Models (DM) rules.\n\n"
+            )
+
+            if has_mp_rules:
+                context_section += "Provider Safety Levels:\n"
+                if safe_providers:
+                    context_section += f"  Safe providers: {', '.join(safe_providers)}\n"
+                if worrying_providers:
+                    context_section += f"  Worrying providers: {', '.join(worrying_providers)}\n"
+                if dangerous_providers:
+                    context_section += f"  Dangerous providers: {', '.join(dangerous_providers)}\n"
+                context_section += "\n"
+
+            if has_dm_rules:
+                context_section += "Deprecated and Legacy Models by Provider:\n"
+                context_section += (
+                    "CRITICAL: Each model belongs to a specific provider. "
+                    "Only check for deprecated models from the provider that matches the rule's organization.\n"
+                )
+                context_section += "For example:\n"
+                context_section += (
+                    "- OpenAI-001 rule should ONLY check for OpenAI deprecated models "
+                    "(e.g., text-davinci-003, text-davinci-002)\n"
+                )
+                context_section += "- Anthropic-001 rule should ONLY check for Anthropic deprecated models\n"
+                context_section += (
+                    "- Do NOT confuse models from different providers "
+                    "(e.g., text-davinci-003 is OpenAI, NOT Anthropic)\n\n"
+                )
+                for provider_name, provider_info in provider_config.providers.items():
+                    if provider_info.models.deprecated or provider_info.models.legacy:
+                        context_section += f"  {provider_name}:\n"
+                        if provider_info.models.deprecated:
+                            deprecated_ids = [m.model_id for m in provider_info.models.deprecated]
+                            context_section += f"    Deprecated: {', '.join(deprecated_ids)}\n"
+                        if provider_info.models.legacy:
+                            legacy_ids = [m.model_id for m in provider_info.models.legacy]
+                            context_section += f"    Legacy: {', '.join(legacy_ids)}\n"
+                context_section += "\n"
 
     return f"""Analyze the following code files to determine which of the AI safety rules apply.
 
@@ -115,7 +196,14 @@ CRITICAL REQUIREMENT: You MUST check ALL {len(rules)} rules against ALL {len(cod
 checked against every file. This is not optional.
 
 Rules to check:
-{rules_section}
+{rules_section}{context_section}
+CRITICAL: When checking Deprecated Models (DM) rules, you MUST match the rule's organization with the provider:
+- Rules with organization "OpenAI" (e.g., OpenAI-001) should ONLY check for OpenAI deprecated models
+- Rules with organization "Anthropic" (e.g., Anthropic-001) should ONLY check for Anthropic deprecated models
+- Do NOT confuse models from different providers. For example, "text-davinci-003" is an OpenAI model, \
+NOT an Anthropic model.
+- Each provider's deprecated models are listed under that provider's name in the \
+"Deprecated and Legacy Models by Provider" section above.
 
 You decide the best approach to analyze the code using the available tools. However, you MUST ensure:
 - ALL {len(code_paths)} files are examined (no file can be skipped)
@@ -137,9 +225,15 @@ Choose the most efficient approach, but ensure completeness:
 - Use single-file tools when you need to focus on specific files
 - Whatever approach you choose, you MUST check every rule against every file
 
+IMPORTANT: When you read files using read_file or read_files, the content will include line numbers in the format \
+"1: line content", "2: line content", etc.
+These line numbers correspond to the actual line numbers in the original file. When reporting violations, use the line \
+number shown in the file content (the number before the colon).
+
 For each violation found, provide:
 - The exact file path (one of the files listed above)
-- The exact line number where the violation occurs
+- The exact line number where the violation occurs (use the line number shown in the file content, e.g., if you see \
+"25: def foo():", the line number is 25)
 - A clear message explaining the violation
 - The violation must be included in the 'violations' list for that rule
 
